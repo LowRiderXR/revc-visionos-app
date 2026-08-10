@@ -21,6 +21,12 @@ typedef NSInteger EnumBackingType;
 
 #include <simd/simd.h>
 
+#ifndef __METAL_VERSION__
+// Expose the plain-C renderer boundary to Swift via this bridging header.
+// Guarded so it never enters Metal shader compilation.
+#include "VCPlatform.h"
+#endif
+
 typedef NS_ENUM(EnumBackingType, BufferIndex)
 {
     BufferIndexMeshPositions  = 0,

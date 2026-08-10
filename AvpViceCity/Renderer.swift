@@ -95,6 +95,11 @@ actor Renderer {
         let device = self.device
         self.commandQueue = self.device.makeCommandQueue()!
 
+        // Hand the Metal device to the (future) C++ renderer across the C
+        // boundary. Passed as an opaque, unretained pointer since the host
+        // owns the device's lifetime.
+        _ = vc_renderer_init(Unmanaged.passUnretained(self.device as AnyObject).toOpaque())
+
         #if !targetEnvironment(simulator)
         let residencySetDesc = MTLResidencySetDescriptor()
         residencySetDesc.initialCapacity = 3 // color + depth + view projection buffer
@@ -345,6 +350,10 @@ actor Renderer {
             render(drawable: drawable, commandBuffer: commandBuffer, frameIndex: frame.frameIndex)
         }
 
+        // Hand the frame to the (future) C++ renderer once per frame, from
+        // within the submission phase and sharing this frame's command buffer.
+        submitFrameToVCRenderer(drawable: drawables[0], commandBuffer: commandBuffer)
+
         committedFrameIndex += 1
 
         commandBuffer.encodeSignalEvent(self.endFrameEvent, value: committedFrameIndex)
@@ -469,6 +478,39 @@ actor Renderer {
         renderEncoder.endEncoding()
 
         drawable.encodePresent(commandBuffer: commandBuffer)
+    }
+
+    /// Populate a `vc_frame_t` from the current drawable and pass it across the
+    /// C boundary to the (future) C++ renderer. All Metal objects are handed
+    /// over as opaque, unretained pointers valid only for the duration of the
+    /// call. Per-eye matrices are derived exactly as the Metal path does.
+    private func submitFrameToVCRenderer(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer) {
+        let simdDeviceAnchor = drawable.deviceAnchor?.originFromAnchorTransform ?? matrix_identity_float4x4
+
+        func makeEye(_ viewIndex: Int) -> vc_eye_t {
+            let view = drawable.views[viewIndex]
+            let viewMatrix = (simdDeviceAnchor * view.transform).inverse
+            let projectionMatrix = drawable.computeProjection(viewIndex: viewIndex)
+            return vc_eye_t(view: viewMatrix, projection: projectionMatrix, slice: UInt32(viewIndex))
+        }
+
+        var frame = vc_frame_t()
+        let viewCount = min(drawable.views.count, 2)
+        frame.eye_count = UInt32(viewCount)
+        if viewCount > 0 { frame.eyes.0 = makeEye(0) }
+        if viewCount > 1 { frame.eyes.1 = makeEye(1) }
+
+        frame.color_texture = Unmanaged.passUnretained(drawable.colorTextures[0] as AnyObject).toOpaque()
+        frame.depth_texture = Unmanaged.passUnretained(drawable.depthTextures[0] as AnyObject).toOpaque()
+        if let rateMap = drawable.rasterizationRateMaps.first {
+            frame.rate_map = Unmanaged.passUnretained(rateMap as AnyObject).toOpaque()
+        } else {
+            frame.rate_map = nil
+        }
+        frame.command_buffer = Unmanaged.passUnretained(commandBuffer as AnyObject).toOpaque()
+        frame.presentation_time = drawable.frameTiming.presentationTime.timeInterval
+
+        withUnsafePointer(to: &frame) { vc_renderer_render($0) }
     }
 
     func renderLoop() {
