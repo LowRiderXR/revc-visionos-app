@@ -346,8 +346,18 @@ actor Renderer {
 
         frame.startSubmission()
 
+        // A device anchor is required to present. If world tracking hasn't
+        // produced one yet (e.g. right at startup), skip this frame instead of
+        // presenting a drawable without an anchor — startSubmission() and
+        // endSubmission() stay paired and the render loop keeps running.
+        let presentationTime = drawables[0].frameTiming.presentationTime.timeInterval
+        guard let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: presentationTime) else {
+            frame.endSubmission()
+            return
+        }
+
         for drawable in drawables {
-            render(drawable: drawable, commandBuffer: commandBuffer, frameIndex: frame.frameIndex)
+            render(drawable: drawable, deviceAnchor: deviceAnchor, commandBuffer: commandBuffer, frameIndex: frame.frameIndex)
         }
 
         // Hand the frame to the (future) C++ renderer once per frame, from
@@ -363,10 +373,7 @@ actor Renderer {
         frame.endSubmission()
     }
 
-    func render(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer, frameIndex: UInt64) {
-        let time = drawable.frameTiming.presentationTime.timeInterval
-        let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: time)
-
+    func render(drawable: LayerRenderer.Drawable, deviceAnchor: DeviceAnchor, commandBuffer: MTLCommandBuffer, frameIndex: UInt64) {
         drawable.deviceAnchor = deviceAnchor
 
         if perDrawableTarget[drawable.target] == nil {
