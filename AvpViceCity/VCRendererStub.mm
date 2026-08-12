@@ -152,6 +152,68 @@ void vc_renderer_render(const vc_frame_t *frame) {
     if (commandBuffer != nil && colorTexture != nil && depthTexture != nil &&
         vc_build_pipeline_if_needed(colorTexture, depthTexture)) {
 
+        // ---- Decide rate-map usage (read fresh every frame; never cached) ---
+        // A rasterization rate map remaps a LOGICAL (screen-size) viewport into
+        // the smaller physical render target. Attach it only if the colour
+        // texture is at least as large as the map's physical size for every
+        // layer we render into; a stale/mismatched map warps silently (no error
+        // from Metal), so on mismatch we fall back to the unfoveated path.
+        id<MTLRasterizationRateMap> rateMapToUse = nil;
+        MTLSize rateScreenSize = (MTLSize){0, 0, 0};
+        MTLSize ratePhysicalSize = (MTLSize){0, 0, 0}; // layer 0, for logging
+
+        const uint32_t eyesUsed = frame->eye_count < 2 ? frame->eye_count : 2;
+
+        if (rateMap != nil) {
+            rateScreenSize = rateMap.screenSize;
+            const NSUInteger layerCount = rateMap.layerCount;
+            bool fits = (layerCount >= eyesUsed);
+            for (uint32_t i = 0; i < eyesUsed && i < layerCount; i++) {
+                MTLSize phys = [rateMap physicalSizeForLayer:i];
+                if (i == 0) { ratePhysicalSize = phys; }
+                if (colorTexture.width < phys.width || colorTexture.height < phys.height) {
+                    fits = false;
+                }
+            }
+            if (fits) {
+                rateMapToUse = rateMap;
+            }
+        }
+
+        // Log the rate-map state on the first call and whenever it changes
+        // (never per frame, never silent).
+        {
+            static bool sInitialized = false;
+            static bool sHadRateMap = false;
+            static bool sAttached = false;
+            static NSUInteger sScreenW = 0, sScreenH = 0, sPhysW = 0, sPhysH = 0;
+
+            const bool hadRateMap = (rateMap != nil);
+            const bool attached = (rateMapToUse != nil);
+            if (!sInitialized || hadRateMap != sHadRateMap || attached != sAttached ||
+                rateScreenSize.width != sScreenW || rateScreenSize.height != sScreenH ||
+                ratePhysicalSize.width != sPhysW || ratePhysicalSize.height != sPhysH) {
+                if (!hadRateMap) {
+                    NSLog(@"[vc] rate map: none (null) -> unfoveated fallback, viewport = texture %lux%lu",
+                          (unsigned long)colorTexture.width, (unsigned long)colorTexture.height);
+                } else if (attached) {
+                    NSLog(@"[vc] rate map: ATTACHED screenSize=%lux%lu physicalSize(layer0)=%lux%lu (viewport = screenSize)",
+                          (unsigned long)rateScreenSize.width, (unsigned long)rateScreenSize.height,
+                          (unsigned long)ratePhysicalSize.width, (unsigned long)ratePhysicalSize.height);
+                } else {
+                    NSLog(@"[vc] rate map: MISMATCH screenSize=%lux%lu physicalSize(layer0)=%lux%lu vs color texture %lux%lu -> NOT attached, unfoveated fallback",
+                          (unsigned long)rateScreenSize.width, (unsigned long)rateScreenSize.height,
+                          (unsigned long)ratePhysicalSize.width, (unsigned long)ratePhysicalSize.height,
+                          (unsigned long)colorTexture.width, (unsigned long)colorTexture.height);
+                }
+                sInitialized = true;
+                sHadRateMap = hadRateMap;
+                sAttached = attached;
+                sScreenW = rateScreenSize.width; sScreenH = rateScreenSize.height;
+                sPhysW = ratePhysicalSize.width; sPhysH = ratePhysicalSize.height;
+            }
+        }
+
         MTLRenderPassDescriptor *passDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
         // loadAction .load: keep whatever the Swift renderer already drew.
         passDescriptor.colorAttachments[0].texture = colorTexture;
@@ -160,8 +222,8 @@ void vc_renderer_render(const vc_frame_t *frame) {
         passDescriptor.depthAttachment.texture = depthTexture;
         passDescriptor.depthAttachment.loadAction = MTLLoadActionLoad;
         passDescriptor.depthAttachment.storeAction = MTLStoreActionStore;
-        if (rateMap != nil) {
-            passDescriptor.rasterizationRateMap = rateMap;
+        if (rateMapToUse != nil) {
+            passDescriptor.rasterizationRateMap = rateMapToUse;
         }
         // Layered render target: vertex amplification routes each eye to its
         // own slice via the view mapping's renderTargetArrayIndexOffset.
@@ -174,12 +236,12 @@ void vc_renderer_render(const vc_frame_t *frame) {
         [encoder setDepthStencilState:gDepthState];
         [encoder setCullMode:MTLCullModeNone];
 
-        // With a rasterization rate map the viewport is screen space (the map
-        // compresses to the physical texture); otherwise it is the full texture.
+        // With the rate map attached, the viewport is in LOGICAL (screen)
+        // coordinates and the map compresses to the physical render target;
+        // otherwise (null or size mismatch) it maps 1:1 to the physical texture.
         MTLViewport viewport;
-        if (rateMap != nil) {
-            MTLSize screenSize = rateMap.screenSize;
-            viewport = (MTLViewport){0.0, 0.0, (double)screenSize.width, (double)screenSize.height, 0.0, 1.0};
+        if (rateMapToUse != nil) {
+            viewport = (MTLViewport){0.0, 0.0, (double)rateScreenSize.width, (double)rateScreenSize.height, 0.0, 1.0};
         } else {
             viewport = (MTLViewport){0.0, 0.0, (double)colorTexture.width, (double)colorTexture.height, 0.0, 1.0};
         }
