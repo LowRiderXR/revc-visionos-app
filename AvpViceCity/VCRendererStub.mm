@@ -3,8 +3,9 @@
 //  AvpViceCity
 //
 //  Minimal but real Metal renderer behind the VCPlatform boundary. It draws a
-//  single, world-anchored triangle once per eye into the colour/depth textures
-//  the Swift host hands over each frame. It never creates or commits a command
+//  single, world-anchored triangle for both eyes in one vertex-amplified pass,
+//  into the colour/depth textures the Swift host hands over each frame. It never
+//  creates or commits a command
 //  buffer and never presents — the Swift host still owns submission. The
 //  existing throttled diagnostics are kept.
 //
@@ -14,11 +15,16 @@
 
 #import "VCPlatform.h"
 
-// Must match `VCTriangleUniforms` in VCTriangle.metal (column-major float4x4).
+// Per-eye matrices. Must match `VCEyeUniforms` in VCTriangle.metal.
 typedef struct {
     simd_float4x4 view;
     simd_float4x4 projection;
-    uint32_t slice;
+} VCEyeUniforms;
+
+// Both eyes uploaded once; indexed by [[amplification_id]] in the shader.
+// Must match `VCTriangleUniforms` in VCTriangle.metal.
+typedef struct {
+    VCEyeUniforms eyes[2];
 } VCTriangleUniforms;
 
 // Cached GPU resources — built once, never rebuilt per frame.
@@ -112,10 +118,10 @@ static bool vc_build_pipeline_if_needed(id<MTLTexture> colorTexture, id<MTLTextu
     // The drawable colour/depth textures are single-sample (MSAA, if any, is
     // already resolved into them by the host), so this baseline is 1x.
     desc.rasterSampleCount = 1;
-    desc.maxVertexAmplificationCount = 1; // no amplification in this baseline
-    // Required because the vertex shader writes [[render_target_array_index]]
-    // for layered (per-eye) rendering: Metal needs the primitive topology.
-    desc.inputPrimitiveTopology = MTLPrimitiveTopologyClassTriangle;
+    // Both eyes are produced in a single pass via vertex amplification. The
+    // shader no longer writes render_target_array_index, so inputPrimitiveTopology
+    // is not required here.
+    desc.maxVertexAmplificationCount = 2;
     desc.colorAttachments[0].pixelFormat = colorTexture.pixelFormat;
     desc.depthAttachmentPixelFormat = depthTexture.pixelFormat;
 
@@ -142,7 +148,7 @@ void vc_renderer_render(const vc_frame_t *frame) {
     id<MTLRasterizationRateMap> rateMap = (__bridge id<MTLRasterizationRateMap>)frame->rate_map;
     id<MTLCommandBuffer> commandBuffer = (__bridge id<MTLCommandBuffer>)frame->command_buffer;
 
-    // --- Encode the world-anchored triangle, once per eye, every frame ------
+    // --- Encode the world-anchored triangle, both eyes in one pass ----------
     if (commandBuffer != nil && colorTexture != nil && depthTexture != nil &&
         vc_build_pipeline_if_needed(colorTexture, depthTexture)) {
 
@@ -157,8 +163,8 @@ void vc_renderer_render(const vc_frame_t *frame) {
         if (rateMap != nil) {
             passDescriptor.rasterizationRateMap = rateMap;
         }
-        // Layered render target: each eye's draw routes to its own slice via
-        // the shader's [[render_target_array_index]] output.
+        // Layered render target: vertex amplification routes each eye to its
+        // own slice via the view mapping's renderTargetArrayIndexOffset.
         passDescriptor.renderTargetArrayLength = frame->eye_count;
 
         id<MTLRenderCommandEncoder> encoder =
@@ -180,16 +186,26 @@ void vc_renderer_render(const vc_frame_t *frame) {
         [encoder setViewport:viewport];
         [encoder setVertexBuffer:gVertexBuffer offset:0 atIndex:0];
 
-        // One draw call per eye (no vertex amplification in this baseline).
+        // Vertex amplification: produce both eyes in ONE draw call. Amplification
+        // i routes to its eye's texture-array slice via the view mapping's
+        // renderTargetArrayIndexOffset; both share the single viewport (offset 0).
         const uint32_t eyeCount = frame->eye_count < 2 ? frame->eye_count : 2;
+
+        VCTriangleUniforms uniforms;
         for (uint32_t i = 0; i < eyeCount; i++) {
-            VCTriangleUniforms uniforms;
-            uniforms.view = frame->eyes[i].view;
-            uniforms.projection = frame->eyes[i].projection;
-            uniforms.slice = frame->eyes[i].slice;
-            [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
-            [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+            uniforms.eyes[i].view = frame->eyes[i].view;
+            uniforms.eyes[i].projection = frame->eyes[i].projection;
         }
+        [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+
+        MTLVertexAmplificationViewMapping viewMappings[2];
+        for (uint32_t i = 0; i < eyeCount; i++) {
+            viewMappings[i].renderTargetArrayIndexOffset = frame->eyes[i].slice;
+            viewMappings[i].viewportArrayIndexOffset = 0;
+        }
+        [encoder setVertexAmplificationCount:eyeCount viewMappings:viewMappings];
+
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 
         [encoder endEncoding];
     }

@@ -2,37 +2,44 @@
 //  VCTriangle.metal
 //  AvpViceCity
 //
-//  Shader for the C++/Metal boundary's first real draw: a single, world-anchored
-//  triangle rendered once per eye. The vertex positions are supplied in WORLD
-//  space and transformed by the per-eye view and projection matrices that cross
-//  the VCPlatform boundary, so the triangle stays put as the head moves.
+//  Shader for the C++/Metal boundary's draw: a single, world-anchored triangle
+//  rendered for BOTH eyes in one vertex-amplified pass. The vertex positions are
+//  supplied in WORLD space and transformed by the per-eye view and projection
+//  matrices that cross the VCPlatform boundary, so the triangle stays put as the
+//  head moves.
 //
 
 #include <metal_stdlib>
 using namespace metal;
 
-// Must match `VCTriangleUniforms` in VCRendererStub.mm (column-major float4x4).
-struct VCTriangleUniforms {
+// Per-eye matrices. Must match `VCEyeUniforms` in VCRendererStub.mm.
+struct VCEyeUniforms {
     float4x4 view;
     float4x4 projection;
-    uint slice;
+};
+
+// Both eyes in one buffer, indexed by [[amplification_id]]. Must match
+// `VCTriangleUniforms` in VCRendererStub.mm.
+struct VCTriangleUniforms {
+    VCEyeUniforms eyes[2];
 };
 
 struct VCTriangleVertexOut {
     float4 position [[position]];
-    // Routes this vertex's primitive to the eye's texture-array slice without
-    // vertex amplification (one draw call per eye sets `slice`).
-    uint layer [[render_target_array_index]];
+    // No render_target_array_index / viewport_array_index outputs here: with
+    // vertex amplification, both are supplied per amplification by the encoder's
+    // MTLVertexAmplificationViewMapping (offsets), not written by the shader.
 };
 
 vertex VCTriangleVertexOut vc_triangle_vertex(uint vertexID [[vertex_id]],
+                                              ushort amplificationID [[amplification_id]],
                                               const device packed_float3 *positions [[buffer(0)]],
                                               constant VCTriangleUniforms &uniforms [[buffer(1)]]) {
     VCTriangleVertexOut out;
-    // World-space position -> eye space (view) -> clip space (projection).
+    // Pick this amplification's eye, then world -> eye (view) -> clip (projection).
+    constant VCEyeUniforms &eye = uniforms.eyes[amplificationID];
     float4 worldPosition = float4(positions[vertexID], 1.0);
-    out.position = uniforms.projection * uniforms.view * worldPosition;
-    out.layer = uniforms.slice;
+    out.position = eye.projection * eye.view * worldPosition;
     return out;
 }
 
