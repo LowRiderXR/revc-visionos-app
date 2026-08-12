@@ -344,17 +344,17 @@ actor Renderer {
         let drawables = frame.queryDrawables()
         guard !drawables.isEmpty else { return }
 
-        frame.startSubmission()
-
         // A device anchor is required to present. If world tracking hasn't
-        // produced one yet (e.g. right at startup), skip this frame instead of
-        // presenting a drawable without an anchor — startSubmission() and
-        // endSubmission() stay paired and the render loop keeps running.
+        // produced one yet (e.g. right at startup), skip this frame *before*
+        // opening the submission: CompositorServices requires encodePresent()
+        // before endSubmission(), so we must not open a submission we cannot
+        // present. The render loop keeps running.
         let presentationTime = drawables[0].frameTiming.presentationTime.timeInterval
         guard let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: presentationTime) else {
-            frame.endSubmission()
             return
         }
+
+        frame.startSubmission()
 
         for drawable in drawables {
             render(drawable: drawable, deviceAnchor: deviceAnchor, commandBuffer: commandBuffer, frameIndex: frame.frameIndex)

@@ -43,14 +43,15 @@ bool vc_renderer_init(void *mtl_device) {
     gDevice = device;
 
     // A single triangle, positioned in WORLD space: ~0.5 m across, centred
-    // 1.5 m in front of the world origin (-Z is forward) at roughly eye height
-    // (the world origin sits near head height in this app). Because the
-    // positions are world-space and the shader applies the per-eye view matrix,
-    // the triangle is world-anchored, not head-locked.
+    // 1.5 m in front of the world origin (-Z is forward) at ~eye height. The
+    // world origin sits at the FLOOR in this app (per-frame view.translation.y
+    // shows the eyes ~1.15 m above the origin), so eye height is Y ≈ 1.15 m,
+    // not 0. Because the positions are world-space and the shader applies the
+    // per-eye view matrix, the triangle is world-anchored, not head-locked.
     static const float kTriangleVertices[9] = {
-        -0.25f, -0.25f, -1.5f,
-         0.25f, -0.25f, -1.5f,
-         0.00f,  0.25f, -1.5f,
+        -0.25f, 0.90f, -1.5f,
+         0.25f, 0.90f, -1.5f,
+         0.00f, 1.40f, -1.5f,
     };
     gVertexBuffer = [device newBufferWithBytes:kTriangleVertices
                                         length:sizeof(kTriangleVertices)
@@ -112,6 +113,9 @@ static bool vc_build_pipeline_if_needed(id<MTLTexture> colorTexture, id<MTLTextu
     // already resolved into them by the host), so this baseline is 1x.
     desc.rasterSampleCount = 1;
     desc.maxVertexAmplificationCount = 1; // no amplification in this baseline
+    // Required because the vertex shader writes [[render_target_array_index]]
+    // for layered (per-eye) rendering: Metal needs the primitive topology.
+    desc.inputPrimitiveTopology = MTLPrimitiveTopologyClassTriangle;
     desc.colorAttachments[0].pixelFormat = colorTexture.pixelFormat;
     desc.depthAttachmentPixelFormat = depthTexture.pixelFormat;
 
