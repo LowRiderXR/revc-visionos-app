@@ -37,6 +37,12 @@ struct AvpViceCityApp: App {
 
     @State private var appModel = AppModel()
 
+    init() {
+        // Start observing game controllers at launch (main thread). Input flows
+        // event-driven into the C seam; the render loop is untouched.
+        GamepadInput.shared.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

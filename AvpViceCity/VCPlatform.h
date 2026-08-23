@@ -83,6 +83,30 @@ void vc_release_frame(uint32_t index);
 /// Call once; NULL if the shared-event path is unavailable (fallback in use).
 void *vc_get_shared_event(void);
 
+// ---------------------------------------------------------------------------
+// Gamepad input (Swift/compositor -> reVC game thread).
+// The Swift side reads GCController on the main thread and pushes the latest
+// snapshot via vc_set_gamepad_state(); the reVC game thread reads it in
+// CapturePad. The buffering + lock live in reVC (src/skel/visionos), which
+// mirrors this struct -- the two definitions MUST match. Axes are
+// GCController-natural: x right = +1, y up = +1; triggers 0..1. Buttons 0/1.
+// ---------------------------------------------------------------------------
+typedef struct vc_gamepad_t {
+    float   left_x, left_y;              ///< left thumbstick, -1..1 (up = +1)
+    float   right_x, right_y;            ///< right thumbstick, -1..1 (up = +1)
+    float   left_trigger, right_trigger; ///< L2 / R2, 0..1
+    uint8_t south, east, west, north;    ///< A,B,X,Y -> Cross,Circle,Square,Triangle
+    uint8_t dpad_up, dpad_down, dpad_left, dpad_right;
+    uint8_t left_shoulder, right_shoulder;   ///< L1 / R1
+    uint8_t left_thumb, right_thumb;         ///< L3 / R3 (thumbstick click)
+    uint8_t menu, options;                   ///< Start / Select
+} vc_gamepad_t;
+
+/// Push the latest gamepad snapshot. Called from the Swift main thread; the
+/// reVC side buffers it under a lock and reads it on the game thread, so writes
+/// here and reads there never overlap. Pass NULL is a no-op.
+void vc_set_gamepad_state(const vc_gamepad_t *state);
+
 #ifdef __cplusplus
 }
 #endif
