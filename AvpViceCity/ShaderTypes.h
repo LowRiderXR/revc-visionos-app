@@ -27,34 +27,5 @@ typedef NSInteger EnumBackingType;
 #include "VCPlatform.h"
 #endif
 
-typedef NS_ENUM(EnumBackingType, BufferIndex)
-{
-    BufferIndexMeshPositions  = 0,
-    BufferIndexMeshGenerics   = 1,
-    BufferIndexUniforms       = 2,
-    BufferIndexViewProjection = 3,
-};
-
-typedef NS_ENUM(EnumBackingType, VertexAttribute)
-{
-    VertexAttributePosition   = 0,
-    VertexAttributeTexcoord   = 1,
-};
-
-typedef NS_ENUM(EnumBackingType, TextureIndex)
-{
-    TextureIndexColor         = 0,
-};
-
-typedef struct
-{
-    matrix_float4x4 viewProjectionMatrix[2];
-} ViewProjectionArray;
-
-typedef struct
-{
-    matrix_float4x4 modelMatrix;
-} Uniforms;
-
 #endif /* ShaderTypes_h */
 

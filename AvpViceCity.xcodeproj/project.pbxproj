@@ -7,15 +7,68 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		73568EF8302A4CD7002E846D /* RealityKitContent in Frameworks */ = {isa = PBXBuildFile; productRef = 73568EF7302A4CD7002E846D /* RealityKitContent */; };
+		7320608C3030F68E0024CE04 /* libreVCCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 732060813030F66B0024CE04 /* libreVCCore.a */; };
+		7320677230339D280024CE04 /* libopenal.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 7320677130339CEA0024CE04 /* libopenal.a */; };
+		7320677430339DB30024CE04 /* libalsoft.fmt.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 7320677330339D910024CE04 /* libalsoft.fmt.a */; };
+		732067873033AB5D0024CE04 /* ANGLE_libEGL.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */; };
+		732067883033AB5D0024CE04 /* ANGLE_libEGL.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		7320678B3033AB710024CE04 /* ANGLE_libGLESv2.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */; };
+		7320678C3033AB710024CE04 /* ANGLE_libGLESv2.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		7320608D3030F68E0024CE04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 73568EEA302A4CD7002E846D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 732060803030F66B0024CE04;
+			remoteInfo = reVCCore;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7320607F3030F66B0024CE04 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "include/$(PRODUCT_NAME)";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		732067893033AB5D0024CE04 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				7320678C3033AB710024CE04 /* ANGLE_libGLESv2.xcframework in Embed Frameworks */,
+				732067883033AB5D0024CE04 /* ANGLE_libEGL.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		732060813030F66B0024CE04 /* libreVCCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libreVCCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		7320677130339CEA0024CE04 /* libopenal.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libopenal.a; path = "../Prototypes/openal-soft/build-xros/Release-xros/libopenal.a"; sourceTree = "<group>"; };
+		7320677330339D910024CE04 /* libalsoft.fmt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libalsoft.fmt.a; path = "../Prototypes/openal-soft/build-xros/build/alsoft.fmt.build/Release-xros/libalsoft.fmt.a"; sourceTree = "<group>"; };
+		732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ANGLE_libEGL.xcframework; path = "../Prototypes/angle-src/Frameworks/ANGLE_libEGL.xcframework"; sourceTree = "<group>"; };
+		7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ANGLE_libGLESv2.xcframework; path = "../Prototypes/angle-src/Frameworks/ANGLE_libGLESv2.xcframework"; sourceTree = "<group>"; };
 		73568EF2302A4CD7002E846D /* AvpViceCity.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AvpViceCity.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		73568EF6302A4CD7002E846D /* RealityKitContent */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = RealityKitContent; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7320676B303223780024CE04 /* Exceptions for "src" folder in "reVCCore" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				collision/vu0Collision_1.s,
+				collision/vu0Collision_2.s,
+				skel/glfw/glfw.cpp,
+			);
+			target = 732060803030F66B0024CE04 /* reVCCore */;
+		};
 		73568F00302A4CD8002E846D /* Exceptions for "AvpViceCity" folder in "AvpViceCity" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -25,7 +78,40 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		732060893030F66B0024CE04 /* Exceptions for "reVCCore" folder in "Copy Files" phase from "reVCCore" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 7320607F3030F66B0024CE04 /* CopyFiles */;
+			membershipExceptions = (
+				reVCCore.h,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		732060823030F66B0024CE04 /* reVCCore */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				732060893030F66B0024CE04 /* Exceptions for "reVCCore" folder in "Copy Files" phase from "reVCCore" target */,
+			);
+			path = reVCCore;
+			sourceTree = "<group>";
+		};
+		732062EA3030F8FC0024CE04 /* src */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7320676B303223780024CE04 /* Exceptions for "src" folder in "reVCCore" target */,
+			);
+			name = src;
+			path = ../Source/reVC/src;
+			sourceTree = SOURCE_ROOT;
+		};
+		7320671C303222AE0024CE04 /* src */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = src;
+			path = ../Source/reVC/vendor/librw/src;
+			sourceTree = SOURCE_ROOT;
+		};
 		73568EF4302A4CD7002E846D /* AvpViceCity */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -37,22 +123,48 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		7320607E3030F66B0024CE04 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		73568EEF302A4CD7002E846D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				73568EF8302A4CD7002E846D /* RealityKitContent in Frameworks */,
+				732067873033AB5D0024CE04 /* ANGLE_libEGL.xcframework in Frameworks */,
+				7320608C3030F68E0024CE04 /* libreVCCore.a in Frameworks */,
+				7320678B3033AB710024CE04 /* ANGLE_libGLESv2.xcframework in Frameworks */,
+				7320677230339D280024CE04 /* libopenal.a in Frameworks */,
+				7320677430339DB30024CE04 /* libalsoft.fmt.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7320608B3030F68E0024CE04 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */,
+				732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */,
+				7320677330339D910024CE04 /* libalsoft.fmt.a */,
+				7320677130339CEA0024CE04 /* libopenal.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		73568EE9302A4CD7002E846D = {
 			isa = PBXGroup;
 			children = (
 				73568EF4302A4CD7002E846D /* AvpViceCity */,
 				73568EF5302A4CD7002E846D /* Packages */,
+				732060823030F66B0024CE04 /* reVCCore */,
+				732062EA3030F8FC0024CE04 /* src */,
+				7320671C303222AE0024CE04 /* src */,
+				7320608B3030F68E0024CE04 /* Frameworks */,
 				73568EF3302A4CD7002E846D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,6 +173,7 @@
 			isa = PBXGroup;
 			children = (
 				73568EF2302A4CD7002E846D /* AvpViceCity.app */,
+				732060813030F66B0024CE04 /* libreVCCore.a */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -68,7 +181,6 @@
 		73568EF5302A4CD7002E846D /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				73568EF6302A4CD7002E846D /* RealityKitContent */,
 			);
 			path = Packages;
 			sourceTree = "<group>";
@@ -76,6 +188,30 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		732060803030F66B0024CE04 /* reVCCore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7320608A3030F66B0024CE04 /* Build configuration list for PBXNativeTarget "reVCCore" */;
+			buildPhases = (
+				7320607D3030F66B0024CE04 /* Sources */,
+				7320607E3030F66B0024CE04 /* Frameworks */,
+				7320607F3030F66B0024CE04 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				732060823030F66B0024CE04 /* reVCCore */,
+				732062EA3030F8FC0024CE04 /* src */,
+				7320671C303222AE0024CE04 /* src */,
+			);
+			name = reVCCore;
+			packageProductDependencies = (
+			);
+			productName = reVCCore;
+			productReference = 732060813030F66B0024CE04 /* libreVCCore.a */;
+			productType = "com.apple.product-type.library.static";
+		};
 		73568EF1302A4CD7002E846D /* AvpViceCity */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 73568F01302A4CD8002E846D /* Build configuration list for PBXNativeTarget "AvpViceCity" */;
@@ -83,17 +219,18 @@
 				73568EEE302A4CD7002E846D /* Sources */,
 				73568EEF302A4CD7002E846D /* Frameworks */,
 				73568EF0302A4CD7002E846D /* Resources */,
+				732067893033AB5D0024CE04 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7320608E3030F68E0024CE04 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				73568EF4302A4CD7002E846D /* AvpViceCity */,
 			);
 			name = AvpViceCity;
 			packageProductDependencies = (
-				73568EF7302A4CD7002E846D /* RealityKitContent */,
 			);
 			productName = AvpViceCity;
 			productReference = 73568EF2302A4CD7002E846D /* AvpViceCity.app */;
@@ -109,6 +246,9 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					732060803030F66B0024CE04 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					73568EF1302A4CD7002E846D = {
 						CreatedOnToolsVersion = 26.6;
 					};
@@ -129,6 +269,7 @@
 			projectRoot = "";
 			targets = (
 				73568EF1302A4CD7002E846D /* AvpViceCity */,
+				732060803030F66B0024CE04 /* reVCCore */,
 			);
 		};
 /* End PBXProject section */
@@ -144,6 +285,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		7320607D3030F66B0024CE04 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		73568EEE302A4CD7002E846D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -153,7 +301,127 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		7320608E3030F68E0024CE04 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 732060803030F66B0024CE04 /* reVCCore */;
+			targetProxy = 7320608D3030F68E0024CE04 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		732060873030F66B0024CE04 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DTG5LF3YCH;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					LIBRW,
+					RW_GL3,
+					AUDIO_OAL,
+					NDEBUG,
+					LIBRW_VISIONOS,
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../Source/reVC/src",
+					"$(SRCROOT)/../Source/reVC/src/animation",
+					"$(SRCROOT)/../Source/reVC/src/audio",
+					"$(SRCROOT)/../Source/reVC/src/audio/eax",
+					"$(SRCROOT)/../Source/reVC/src/audio/oal",
+					"$(SRCROOT)/../Source/reVC/src/buildings",
+					"$(SRCROOT)/../Source/reVC/src/collision",
+					"$(SRCROOT)/../Source/reVC/src/control",
+					"$(SRCROOT)/../Source/reVC/src/core",
+					"$(SRCROOT)/../Source/reVC/src/entities",
+					"$(SRCROOT)/../Source/reVC/src/math",
+					"$(SRCROOT)/../Source/reVC/src/modelinfo",
+					"$(SRCROOT)/../Source/reVC/src/objects",
+					"$(SRCROOT)/../Source/reVC/src/peds",
+					"$(SRCROOT)/../Source/reVC/src/renderer",
+					"$(SRCROOT)/../Source/reVC/src/rw",
+					"$(SRCROOT)/../Source/reVC/src/save",
+					"$(SRCROOT)/../Source/reVC/src/skel",
+					"$(SRCROOT)/../Source/reVC/src/text",
+					"$(SRCROOT)/../Source/reVC/src/vehicles",
+					"$(SRCROOT)/../Source/reVC/src/weapons",
+					"$(SRCROOT)/../Source/reVC/src/extras",
+					"$(SRCROOT)/../Source/reVC/vendor/librw",
+					"$(SRCROOT)/../Source/reVC/vendor/dr_libs",
+					"$(SRCROOT)/../Source/reVC/src/fakerw",
+					"$(SRCROOT)/../Prototypes/openal-soft/include",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-Wno-deprecated-declarations",
+					"-Wno-unused-value",
+					"-Wno-writable-strings",
+				);
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				TARGETED_DEVICE_FAMILY = 7;
+			};
+			name = Debug;
+		};
+		732060883030F66B0024CE04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DTG5LF3YCH;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					LIBRW,
+					RW_GL3,
+					AUDIO_OAL,
+					NDEBUG,
+					LIBRW_VISIONOS,
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../Source/reVC/src",
+					"$(SRCROOT)/../Source/reVC/src/animation",
+					"$(SRCROOT)/../Source/reVC/src/audio",
+					"$(SRCROOT)/../Source/reVC/src/audio/eax",
+					"$(SRCROOT)/../Source/reVC/src/audio/oal",
+					"$(SRCROOT)/../Source/reVC/src/buildings",
+					"$(SRCROOT)/../Source/reVC/src/collision",
+					"$(SRCROOT)/../Source/reVC/src/control",
+					"$(SRCROOT)/../Source/reVC/src/core",
+					"$(SRCROOT)/../Source/reVC/src/entities",
+					"$(SRCROOT)/../Source/reVC/src/math",
+					"$(SRCROOT)/../Source/reVC/src/modelinfo",
+					"$(SRCROOT)/../Source/reVC/src/objects",
+					"$(SRCROOT)/../Source/reVC/src/peds",
+					"$(SRCROOT)/../Source/reVC/src/renderer",
+					"$(SRCROOT)/../Source/reVC/src/rw",
+					"$(SRCROOT)/../Source/reVC/src/save",
+					"$(SRCROOT)/../Source/reVC/src/skel",
+					"$(SRCROOT)/../Source/reVC/src/text",
+					"$(SRCROOT)/../Source/reVC/src/vehicles",
+					"$(SRCROOT)/../Source/reVC/src/weapons",
+					"$(SRCROOT)/../Source/reVC/src/extras",
+					"$(SRCROOT)/../Source/reVC/vendor/librw",
+					"$(SRCROOT)/../Source/reVC/vendor/dr_libs",
+					"$(SRCROOT)/../Source/reVC/src/fakerw",
+					"$(SRCROOT)/../Prototypes/openal-soft/include",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-Wno-deprecated-declarations",
+					"-Wno-unused-value",
+					"-Wno-writable-strings",
+				);
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				TARGETED_DEVICE_FAMILY = 7;
+			};
+			name = Release;
+		};
 		73568F02302A4CD8002E846D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -267,6 +535,10 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/Release-xros",
+					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/build/alsoft.fmt.build/Release-xros",
+				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -325,6 +597,10 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/Release-xros",
+					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/build/alsoft.fmt.build/Release-xros",
+				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -338,6 +614,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		7320608A3030F66B0024CE04 /* Build configuration list for PBXNativeTarget "reVCCore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				732060873030F66B0024CE04 /* Debug */,
+				732060883030F66B0024CE04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		73568EED302A4CD7002E846D /* Build configuration list for PBXProject "AvpViceCity" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -357,13 +642,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		73568EF7302A4CD7002E846D /* RealityKitContent */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = RealityKitContent;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 73568EEA302A4CD7002E846D /* Project object */;
 }

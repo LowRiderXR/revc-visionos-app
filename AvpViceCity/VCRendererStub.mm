@@ -36,6 +36,9 @@ static id<MTLFunction> gVertexFunction = nil;
 static id<MTLFunction> gFragmentFunction = nil;
 static bool gPipelineFailed = false;
 
+extern "C" bool psInitialize(void);
+extern "C" void vc_game_thread_start(void); // starts reVC's game loop on its own thread
+
 bool vc_renderer_init(void *mtl_device) {
     if (mtl_device == NULL) {
         NSLog(@"[vc] init failed: null Metal device");
@@ -94,6 +97,14 @@ bool vc_renderer_init(void *mtl_device) {
         return false;
     }
 
+    // in vc_renderer_init, nach dem bestehenden Logging:
+    NSLog(@"[vc] calling psInitialize...");
+    bool ok = psInitialize();
+    NSLog(@"[vc] psInitialize returned %d", ok);
+    // Start reVC's game-state loop on its own thread once init succeeded. It
+    // claims the GL context that psInitialize released before returning.
+    if (ok) vc_game_thread_start();
+
     // NOTE: the render pipeline state itself is created lazily on the first
     // render call. It needs the drawable's colour/depth pixel formats, which
     // are only available from the per-frame textures — vc_renderer_init only
@@ -137,6 +148,22 @@ static bool vc_build_pipeline_if_needed(id<MTLTexture> colorTexture, id<MTLTextu
     return true;
 }
 
+// The test triangle is a diagnostic: it proves the compositor pass draws at all
+// and that vertex amplification + the rate map still apply, and gives Phase 5 an
+// object at a known position. Off by default (it sits in front of the screen);
+// enable with VC_DEBUG_TRIANGLE=1. Read once.
+static bool vc_debug_triangle_enabled(void) {
+    static bool cached = false;
+    static bool initialized = false;
+    if (!initialized) {
+        const char *v = getenv("VC_DEBUG_TRIANGLE");
+        cached = (v != NULL && v[0] == '1');
+        initialized = true;
+        NSLog(@"[vc] debug triangle %s (VC_DEBUG_TRIANGLE)", cached ? "ENABLED" : "disabled");
+    }
+    return cached;
+}
+
 void vc_renderer_render(const vc_frame_t *frame) {
     if (frame == NULL) {
         return;
@@ -149,7 +176,9 @@ void vc_renderer_render(const vc_frame_t *frame) {
     id<MTLCommandBuffer> commandBuffer = (__bridge id<MTLCommandBuffer>)frame->command_buffer;
 
     // --- Encode the world-anchored triangle, both eyes in one pass ----------
-    if (commandBuffer != nil && colorTexture != nil && depthTexture != nil &&
+    // Diagnostic only; off unless VC_DEBUG_TRIANGLE=1 (see above).
+    if (vc_debug_triangle_enabled() &&
+        commandBuffer != nil && colorTexture != nil && depthTexture != nil &&
         vc_build_pipeline_if_needed(colorTexture, depthTexture)) {
 
         // ---- Decide rate-map usage (read fresh every frame; never cached) ---
