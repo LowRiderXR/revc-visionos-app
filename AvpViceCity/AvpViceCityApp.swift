@@ -38,6 +38,11 @@ struct AvpViceCityApp: App {
     @State private var appModel = AppModel()
 
     init() {
+        // Configure the audio session BEFORE OpenAL opens its device (that happens
+        // later on the game thread). .playback is window-independent, so audio
+        // survives closing the 2D window.
+        GameAudioSession.configure()
+
         // Start observing game controllers at launch (main thread). Input flows
         // event-driven into the C seam; the render loop is untouched.
         GamepadInput.shared.start()

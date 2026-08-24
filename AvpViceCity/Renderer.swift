@@ -76,6 +76,13 @@ actor Renderer {
     var didLogColorFormat = false
     var didLogGameTexture = false
 
+    // Last acquired game frame, held so a failed acquire re-shows it instead of
+    // going black. The held buffer is never scheduled for release while current.
+    var heldTexture: MTLTexture?
+    var heldIndex: UInt32 = 0
+    var heldWaitValue: UInt64 = 0
+    var hasHeldFrame = false
+
     // Debug stats bars (VC_DEBUG_STATS).
     let statsBarPipeline: MTLRenderPipelineState
     let frameStats = FrameStats()
@@ -404,10 +411,10 @@ actor Renderer {
         ]
     }
 
-    /// Acquire the latest finished game texture and draw it on the world-anchored
-    /// quad, both eyes in one vertex-amplified pass. The event wait sits right
-    /// before this pass; the release runs in the command buffer's completion
-    /// handler. If nothing is ready, no quad is drawn — the frame still presents.
+    /// Draw the game texture on the world-anchored quad, both eyes in one
+    /// vertex-amplified pass. Tries to acquire a fresh frame each compositor
+    /// frame; on failure it re-shows the last held frame (no black, no flicker).
+    /// Black only until the very first frame has ever been acquired.
     private func renderGameQuad(drawables: [LayerRenderer.Drawable], commandBuffer: MTLCommandBuffer) {
         if !didLogColorFormat {
             didLogColorFormat = true
@@ -421,34 +428,45 @@ actor Renderer {
         }
 
         var ready = vc_ready_frame_t()
-        guard vc_acquire_ready_frame(&ready), let texPtr = ready.texture else {
-            return   // nothing ready: draw no quad, frame still presents normally
-        }
-        let index = ready.index
-        let waitValue = ready.wait_value
-        let gameTexture = Unmanaged<AnyObject>.fromOpaque(texPtr).takeUnretainedValue() as! MTLTexture
-
-        // Hand the buffer back only once the GPU has finished reading it.
-        commandBuffer.addCompletedHandler { _ in
-            vc_release_frame(index)
-        }
-
-        if !didLogGameTexture {
-            didLogGameTexture = true
-            print("[vc-quad] game texture \(gameTexture.width)x\(gameTexture.height) pixelFormat=\(gameTexture.pixelFormat.rawValue) sameDeviceAsHost=\(gameTexture.device.registryID == device.registryID)")
-        }
-
-        // Rebuild the quad vertices only when the texture aspect changes.
-        let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
-        if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
-            let verts = gameQuadVertices(aspect: aspect)
-            gameQuadVertexBuffer = verts.withUnsafeBytes {
-                device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+        if vc_acquire_ready_frame(&ready), let texPtr = ready.texture {
+            // Got a fresh frame. Release the PREVIOUS held buffer once THIS
+            // command buffer finishes: it runs in-order after every cb that
+            // sampled the old texture, so the old one is guaranteed no longer in
+            // use. The buffer we keep displaying is never scheduled for release —
+            // that is exactly what lets a failed acquire re-show it safely.
+            if hasHeldFrame {
+                let oldIndex = heldIndex
+                commandBuffer.addCompletedHandler { _ in vc_release_frame(oldIndex) }
             }
-            gameQuadVertexBuffer?.label = "GameQuadVertices"
-            gameQuadAspect = aspect
+
+            heldTexture = Unmanaged<AnyObject>.fromOpaque(texPtr).takeUnretainedValue() as? MTLTexture
+            heldIndex = ready.index
+            heldWaitValue = ready.wait_value
+            hasHeldFrame = true
+
+            if !didLogGameTexture, let t = heldTexture {
+                didLogGameTexture = true
+                print("[vc-quad] game texture \(t.width)x\(t.height) pixelFormat=\(t.pixelFormat.rawValue) sameDeviceAsHost=\(t.device.registryID == device.registryID)")
+            }
+
+            // Rebuild the quad vertices only when the texture aspect changes.
+            let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
+            if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
+                let verts = gameQuadVertices(aspect: aspect)
+                gameQuadVertexBuffer = verts.withUnsafeBytes {
+                    device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+                }
+                gameQuadVertexBuffer?.label = "GameQuadVertices"
+                gameQuadAspect = aspect
+            }
         }
-        guard let quadVertexBuffer = gameQuadVertexBuffer else { return }
+
+        // Nothing to show until the first-ever acquire; then always show the held
+        // frame (fresh this frame, or re-shown on a failed acquire).
+        guard hasHeldFrame, let gameTexture = heldTexture, let quadVertexBuffer = gameQuadVertexBuffer else {
+            return
+        }
+        let waitValue = heldWaitValue
 
         // Gate the quad pass on the game's GPU. Skip when there is no event
         // (fallback path) or no value (VC_NOFENCE) — waiting on a value that is
