@@ -107,6 +107,35 @@ typedef struct vc_gamepad_t {
 /// here and reads there never overlap. Pass NULL is a no-op.
 void vc_set_gamepad_state(const vc_gamepad_t *state);
 
+// ---------------------------------------------------------------------------
+// Render mode (cinema vs stereo). Read once from VC_RENDER_MODE at startup,
+// default cinema. This is the EFFECTIVE mode: while stereo is unimplemented it
+// falls back to cinema, so vc_render_mode() reports cinema even if stereo was
+// requested. The value lives in a mutable global (no compile-time bake-in), so a
+// later runtime switch is not precluded. reVC mirrors this enum -- keep in sync.
+// ---------------------------------------------------------------------------
+typedef enum vc_render_mode_t {
+    VC_MODE_CINEMA = 0,   ///< single flat render target on a world-anchored quad
+    VC_MODE_STEREO = 1,   ///< per-eye render (not implemented yet -> cinema)
+} vc_render_mode_t;
+
+/// The active (effective) render mode. Readable from both reVC and Swift.
+vc_render_mode_t vc_render_mode(void);
+
+// ---------------------------------------------------------------------------
+// Camera matrix override (stereo injection point). When the override is active,
+// reVC's gl3device beginUpdate uploads THESE matrices to the shader uniforms
+// instead of the ones it computed from RwCamera. With the flag off, nothing
+// changes. Matrices are 16 floats, COLUMN-MAJOR, in librw's convention:
+// left-handed view space looking down +Z, clip depth -1..1. (CompositorServices
+// matrices are right-handed / -Z / depth 0..1 and will need converting BEFORE
+// being passed here -- that conversion is a later step, not done by these
+// setters.) Buffered under a lock on the reVC side; safe to call cross-thread.
+// ---------------------------------------------------------------------------
+void vc_set_view_matrix(const float m[16]);
+void vc_set_projection_matrix(const float m[16]);
+void vc_set_matrix_override(int active);
+
 #ifdef __cplusplus
 }
 #endif

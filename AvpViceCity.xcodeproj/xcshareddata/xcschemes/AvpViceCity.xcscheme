@@ -69,8 +69,28 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_BUFFER_MODE"
-            value = "wait"
+            value = "newest"
             isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DOUBLE_RENDER"
+            value = "2"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_SLICE_TEST"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_RENDER_MODE"
+            value = "stereo"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MATRIX_TEST"
+            value = "identity"
+            isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
