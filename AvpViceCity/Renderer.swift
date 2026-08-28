@@ -17,6 +17,20 @@ nonisolated let maxBuffersInFlight = 3
 // for "it stutters".
 nonisolated let vcDebugStats = ProcessInfo.processInfo.environment["VC_DEBUG_STATS"] == "1"
 
+// Head tracking (Phase 5, one eye): feed the left-eye CompositorServices camera
+// into reVC as an offset on top of the game camera. Off by default.
+//   VC_HEAD_TRACKING=1    full head pose (yaw+pitch+roll+translation)
+//   VC_HEAD_TRACKING=yaw  yaw only (pitch/roll/translation zeroed) -- isolates
+//                         the rotation-direction question for the swim test.
+// 0 = off, 1 = full, 2 = yaw-only.
+nonisolated let vcHeadTrackingMode: Int = {
+    switch ProcessInfo.processInfo.environment["VC_HEAD_TRACKING"] {
+    case "1":   return 1
+    case "yaw": return 2
+    default:    return 0
+    }
+}()
+
 // The 90 Hz frame budget in milliseconds (1/90 s). Full-length bar == budget;
 // longer/red means over budget.
 nonisolated let vcFrameBudgetMs = 1000.0 / 90.0   // 11.1 ms
@@ -75,6 +89,8 @@ actor Renderer {
     var gameQuadAspect: Float = 0          // width/height the vertex buffer was built for
     var didLogColorFormat = false
     var didLogGameTexture = false
+    var lastHeadLogTime: Double = 0   // throttles the per-second M_head translation log
+    var didLogHeadTracking = false
 
     // Last acquired game frame, held so a failed acquire re-shows it instead of
     // going black. The held buffer is never scheduled for release while current.
@@ -365,7 +381,88 @@ actor Renderer {
     /// C boundary to the (future) C++ renderer. All Metal objects are handed
     /// over as opaque, unretained pointers valid only for the duration of the
     /// call. Per-eye matrices are derived exactly as the Metal path does.
+    /// Convert the left-eye CompositorServices camera to librw convention and push
+    /// it as a head-pose OFFSET (compose mode) on top of the game camera:
+    /// V_final = M_head · V_game. The game camera (third-person, from the gamepad)
+    /// is preserved; the head only adds a look-around on top, so Tommy stays put in
+    /// the world and wanders out of frame as you turn.
+    /// Projection: P_out = D·P_cs·F (F: librw +Z eye -> Metal -Z; D: clip depth
+    /// 0..1 -> -1..1). Offset: M_head = F·V_cs·F (basis-change similarity of the
+    /// Metal head view into librw eye space; proper rotation, no mirroring).
+    /// This is coherent only with a HEAD-LOCKED quad (see renderGameQuad): a
+    /// world-anchored quad would count the head motion twice.
+    /// Runs on the render thread per host frame; the reVC side buffers under a lock.
+    private func pushHeadMatrices(drawable: LayerRenderer.Drawable, yawOnly: Bool) {
+        if !didLogHeadTracking {
+            didLogHeadTracking = true
+            let kind = yawOnly ? "yaw only" : "full pose"
+            print("[vc-head] head tracking ENABLED (\(kind), left eye -> game-camera offset, compose)")
+        }
+
+        let anchor = drawable.deviceAnchor?.originFromAnchorTransform ?? matrix_identity_float4x4
+        // eye->world pose (Metal RH, -Z). This is a POSE, not a view matrix; the
+        // view is its inverse (below).
+        var eyePose = anchor * drawable.views[0].transform
+
+        if yawOnly {
+            // Keep only the heading (rotation about world up, +Y); drop pitch,
+            // roll, and translation. The eye looks down -Z, so its forward in
+            // world space is -(pose.col2). Project onto the XZ plane and rebuild
+            // a pure +Y rotation that reproduces exactly that heading, so the
+            // yaw sign is preserved through the same conversion below.
+            let fwd = -SIMD3<Float>(eyePose.columns.2.x, eyePose.columns.2.y, eyePose.columns.2.z)
+            // R_y(a) maps (0,0,-1) -> (-sin a, 0, -cos a); solve for a from fwd.
+            let a = atan2(-fwd.x, -fwd.z)
+            eyePose = simd_float4x4(simd_quatf(angle: a, axis: SIMD3<Float>(0, 1, 0)))
+        }
+
+        let vCS = eyePose.inverse                                  // world -> eye (Metal RH, -Z)
+        let pCS = drawable.computeProjection(viewIndex: 0)          // Metal RH, -Z, depth 0..1
+
+        let F = simd_float4x4(diagonal: SIMD4<Float>(1, 1, -1, 1))  // Z flip, F == F^-1
+        // Depth remap clip z: 0..1 (Metal) -> -1..1 (GL): z' = 2z - w. Column-major.
+        let D = simd_float4x4(columns: (SIMD4<Float>(1, 0, 0, 0),
+                                        SIMD4<Float>(0, 1, 0, 0),
+                                        SIMD4<Float>(0, 0, 2, 0),
+                                        SIMD4<Float>(0, 0, -1, 1)))
+
+        // Head offset in librw eye convention. It is a change-of-basis
+        // (similarity) of the Metal head view V_cs by F, i.e. M_head = F·V_cs·F --
+        // a proper rotation (det +1), so no mirroring. (The earlier "raw V_cs"
+        // variant was only compensating for double-counted head motion from the
+        // world-anchored quad; the quad is head-locked now, so the compensation is
+        // gone and the convention form is restored.)
+        let mHead = F * vCS * F
+        let pOut  = D * pCS * F      // projection, librw convention (+Z eye, depth -1..1)
+
+        // Once per second: the translation of the head offset in metres. Values
+        // near my distance to the ARKit origin -> missing recenter (a); values
+        // that are implausible or track with head motion -> translation-conversion
+        // bug (b).
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastHeadLogTime >= 1.0 {
+            lastHeadLogTime = now
+            print(String(format: "[vc-head] M_head translation (m): x=%.3f y=%.3f z=%.3f",
+                         mHead.columns.3.x, mHead.columns.3.y, mHead.columns.3.z))
+        }
+
+        func flat(_ m: simd_float4x4) -> [Float] {
+            [m.columns.0.x, m.columns.0.y, m.columns.0.z, m.columns.0.w,
+             m.columns.1.x, m.columns.1.y, m.columns.1.z, m.columns.1.w,
+             m.columns.2.x, m.columns.2.y, m.columns.2.z, m.columns.2.w,
+             m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w]
+        }
+        vc_set_view_matrix(flat(mHead))
+        vc_set_projection_matrix(flat(pOut))
+        vc_set_view_compose(1)
+        vc_set_matrix_override(1)
+    }
+
     private func submitFrameToVCRenderer(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer) {
+        if vcHeadTrackingMode != 0 {
+            pushHeadMatrices(drawable: drawable, yawOnly: vcHeadTrackingMode == 2)
+        }
+
         let simdDeviceAnchor = drawable.deviceAnchor?.originFromAnchorTransform ?? matrix_identity_float4x4
 
         func makeEye(_ viewIndex: Int) -> vc_eye_t {
@@ -402,7 +499,12 @@ actor Renderer {
     private func gameQuadVertices(aspect: Float) -> [Float] {
         let halfHeight: Float = 0.75          // 1.5 m tall
         let halfWidth = halfHeight * aspect
-        let cx: Float = 0.0, cy: Float = 1.15, cz: Float = -2.5
+        // World-anchored: 1.15 m above the floor origin (eye height in the room).
+        // Head-locked (head tracking on): the origin IS the head, so centre at
+        // eye level (cy = 0), otherwise the screen sits 1.15 m above the eyes.
+        let cx: Float = 0.0
+        let cy: Float = vcHeadTrackingMode != 0 ? 0.0 : 1.15
+        let cz: Float = -2.5
         return [
             cx - halfWidth, cy - halfHeight, cz,  0.0, 0.0,   // bottom-left
             cx + halfWidth, cy - halfHeight, cz,  1.0, 0.0,   // bottom-right
@@ -518,7 +620,15 @@ actor Renderer {
             var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
             for i in 0..<min(drawable.views.count, 2) {
                 let view = drawable.views[i]
-                let viewMatrix = (simdDeviceAnchor * view.transform).inverse
+                // While head tracking is active, HEAD-LOCK the quad: drop the
+                // device-anchor (world) part so the screen stays glued to the head.
+                // This neutralizes the compositor's own head tracking of the quad --
+                // otherwise the head motion is counted twice (once moving the quad in
+                // the room, once in the composed game camera) and no M_head sign can
+                // ever look right. Normal cinema keeps the quad world-anchored.
+                let viewMatrix: simd_float4x4 = vcHeadTrackingMode != 0
+                    ? view.transform.inverse
+                    : (simdDeviceAnchor * view.transform).inverse
                 let projectionMatrix = drawable.computeProjection(viewIndex: i)
                 viewProjection[i] = projectionMatrix * viewMatrix
             }

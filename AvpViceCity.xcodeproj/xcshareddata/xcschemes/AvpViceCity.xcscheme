@@ -90,6 +90,16 @@
          <EnvironmentVariable
             key = "VC_MATRIX_TEST"
             value = "identity"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_HEAD_TRACKING"
+            value = "yaw"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_HEAD_KEEP_PROJ"
+            value = "1"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

@@ -136,6 +136,13 @@ void vc_set_view_matrix(const float m[16]);
 void vc_set_projection_matrix(const float m[16]);
 void vc_set_matrix_override(int active);
 
+/// View compose mode. When on AND the override is active, reVC treats the view
+/// matrix above as a head-pose OFFSET and left-multiplies it onto the game's own
+/// view (V_final = offset * V_game) instead of replacing it -- so the game
+/// camera is preserved and the head pose only adds a look-around on top. Off =
+/// replace (used by the matrix self-test). Head tracking sets this on.
+void vc_set_view_compose(int on);
+
 #ifdef __cplusplus
 }
 #endif
