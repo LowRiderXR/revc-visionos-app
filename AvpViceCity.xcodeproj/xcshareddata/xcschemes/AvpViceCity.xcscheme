@@ -85,7 +85,7 @@
          <EnvironmentVariable
             key = "VC_RENDER_MODE"
             value = "stereo"
-            isEnabled = "NO">
+            isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MATRIX_TEST"
@@ -95,12 +95,32 @@
          <EnvironmentVariable
             key = "VC_HEAD_TRACKING"
             value = "yaw"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_HEAD_KEEP_PROJ"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_TESTFILL"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_CLEARTEST"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_NOWAIT"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_BASECLEAR"
+            value = "1"
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>

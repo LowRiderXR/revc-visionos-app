@@ -63,11 +63,20 @@ void vc_renderer_shutdown(void);
 // ---------------------------------------------------------------------------
 
 /// A finished render-target buffer ready for the compositor.
+///
+/// `eye_count` selects how `texture` is laid out, matching the compositor
+/// drawable's own shape so both eyes can be drawn in one vertex-amplified pass:
+///   1 -> mono: `texture` is a 2D MTLTexture (cinema mode).
+///   2 -> stereo: `texture` is a 2D-array MTLTexture with arrayLength 2; slice 0
+///        is the left eye, slice 1 the right. `width`/`height` are per-slice.
+/// One texture reference (not two): the stereo target is a single array texture,
+/// so the compositor binds it as a texture2d_array and indexes slice = viewIndex.
 typedef struct vc_ready_frame_t {
-    void    *texture;      ///< id<MTLTexture>, opaque (on ANGLE's MTLDevice)
+    void    *texture;      ///< id<MTLTexture>, opaque (on ANGLE's MTLDevice); 2D or 2D-array
     uint32_t index;        ///< buffer index; pass back to vc_release_frame()
     uint64_t wait_value;   ///< shared-event value to wait for (0 = no wait)
-    uint32_t width, height;
+    uint32_t width, height;///< per-slice dimensions
+    uint32_t eye_count;    ///< 1 = mono (sample the 2D texture); 2 = stereo (array slice per eye)
 } vc_ready_frame_t;
 
 /// Non-blocking. Fills `out` with the most recently finished buffer and returns

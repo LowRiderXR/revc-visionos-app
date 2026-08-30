@@ -17,6 +17,30 @@ nonisolated let maxBuffersInFlight = 3
 // for "it stutters".
 nonisolated let vcDebugStats = ProcessInfo.processInfo.environment["VC_DEBUG_STATS"] == "1"
 
+// Stereo display bisection: paint eye0 red / eye1 green instead of sampling the
+// game texture, to tell "pass broken" from "sampling broken". Off by default.
+nonisolated let vcStereoTestFill = ProcessInfo.processInfo.environment["VC_STEREO_TESTFILL"] == "1"
+
+// Deeper bisection: the stereo pass CLEARS the drawable to red (no draw, no
+// pipeline, no geometry, no amplification). If red shows, the pass plumbing
+// reaches the display and only the draw is at fault; if still black, the pass
+// output never reaches the presented drawable. Off by default.
+nonisolated let vcStereoClearTest = ProcessInfo.processInfo.environment["VC_STEREO_CLEARTEST"] == "1"
+
+// Sync bisection: skip the shared-event wait before the display pass. If the
+// screen then shows content (possibly torn), the wait was stalling the command
+// buffer past the frame deadline -> drawable dropped. Diagnostic only.
+nonisolated let vcStereoNoWait = ProcessInfo.processInfo.environment["VC_STEREO_NOWAIT"] == "1"
+
+// Frame-level bisection: colour the BASE clear (render(), the known-good first
+// pass) red on stereo frames. If stereo frames then show red, the frame presents
+// fine and only the second (display) pass is at fault; if still black, the whole
+// stereo frame is being dropped by the compositor. Diagnostic only.
+nonisolated let vcStereoBaseClear = ProcessInfo.processInfo.environment["VC_STEREO_BASECLEAR"] == "1"
+
+// Throttle for the (off-thread) command-buffer error logger.
+nonisolated(unsafe) var vcLastCBErrorLog: Double = 0
+
 // Head tracking (Phase 5, one eye): feed the left-eye CompositorServices camera
 // into reVC as an offset on top of the game camera. Off by default.
 //   VC_HEAD_TRACKING=1    full head pose (yaw+pitch+roll+translation)
@@ -84,11 +108,21 @@ actor Renderer {
 
     // World-anchored quad that displays the reVC/ANGLE game texture.
     let gameQuadPipeline: MTLRenderPipelineState
+    // Full-screen stereo pipeline: samples the 2D-array game texture, one slice
+    // per eye, in a single vertex-amplified pass (used when eye_count == 2).
+    let gameStereoPipeline: MTLRenderPipelineState
+    // Same pipeline but with the test-fill fragment (VC_STEREO_TESTFILL).
+    let gameStereoTestPipeline: MTLRenderPipelineState
+    // Depth-disabled state for the full-screen stereo blit (always fills).
+    let noDepthState: MTLDepthStencilState
     var gameSharedEvent: MTLSharedEvent?   // id<MTLSharedEvent> from the game side (lazy)
     var gameQuadVertexBuffer: MTLBuffer?   // rebuilt when the texture aspect changes
     var gameQuadAspect: Float = 0          // width/height the vertex buffer was built for
+    var stereoFullscreenVertexBuffer: MTLBuffer?  // clip-space full-screen quad (built once)
     var didLogColorFormat = false
-    var didLogGameTexture = false
+    // Log the texture description once PER eye_count, not globally: otherwise the
+    // first mono (menu) frame permanently swallows the stereo description.
+    var loggedGameTexEyeCounts: Set<UInt32> = []
     var lastHeadLogTime: Double = 0   // throttles the per-second M_head translation log
     var didLogHeadTracking = false
 
@@ -98,6 +132,11 @@ actor Renderer {
     var heldIndex: UInt32 = 0
     var heldWaitValue: UInt64 = 0
     var hasHeldFrame = false
+    var heldEyeCount: UInt32 = 1           // 1 = mono/cinema, 2 = stereo array; drives the display path
+    var didLogStereoDisplay = false
+    var lastPathLogTime: Double = 0        // throttles the per-frame path/branch diagnostic
+    var lastStereoDrawLogTime: Double = 0  // throttles the "stereo drew this frame" diagnostic
+    var lastPresentLogTime: Double = 0     // throttles the present/empty-path anchor diagnostic
 
     // Debug stats bars (VC_DEBUG_STATS).
     let statsBarPipeline: MTLRenderPipelineState
@@ -141,12 +180,17 @@ actor Renderer {
 
         do {
             gameQuadPipeline = try Self.buildGameQuadPipeline(device: device, layerRenderer: layerRenderer)
+            gameStereoPipeline = try Self.buildGameStereoPipeline(device: device, layerRenderer: layerRenderer,
+                                                                  fragment: "vc_stereo_fragment")
+            gameStereoTestPipeline = try Self.buildGameStereoPipeline(device: device, layerRenderer: layerRenderer,
+                                                                      fragment: "vc_stereo_fragment_testfill")
             statsBarPipeline = try Self.buildStatsBarPipeline(device: device, layerRenderer: layerRenderer)
         } catch {
-            fatalError("Unable to compile game-quad/stats pipeline state. Error info: \(error)")
+            fatalError("Unable to compile game-quad/stereo/stats pipeline state. Error info: \(error)")
         }
 
         self.depthState = Self.buildDepthStencilState(device: device)
+        self.noDepthState = Self.buildNoDepthStencilState(device: device)
 
         worldTracking = WorldTrackingProvider()
         print("[vc-stats] VC_DEBUG_STATS \(vcDebugStats ? "ENABLED" : "disabled"), budget=\(vcFrameBudgetMs) ms")
@@ -186,6 +230,24 @@ actor Renderer {
         return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
     }
 
+    // Full-screen stereo pipeline: samples the 2D-array game texture (slice per
+    // eye) with no geometry/uniforms. Same single-sample / amplified setup as the
+    // quad so both eyes render in one pass.
+    static func buildGameStereoPipeline(device: MTLDevice,
+                                        layerRenderer: LayerRenderer,
+                                        fragment: String) throws -> MTLRenderPipelineState {
+        let library = device.makeDefaultLibrary()
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.label = "GameStereoPipeline(\(fragment))"
+        pipelineDescriptor.vertexFunction = library?.makeFunction(name: "vc_stereo_vertex")
+        pipelineDescriptor.fragmentFunction = library?.makeFunction(name: fragment)
+        pipelineDescriptor.rasterSampleCount = 1
+        pipelineDescriptor.colorAttachments[0].pixelFormat = layerRenderer.configuration.colorFormat
+        pipelineDescriptor.depthAttachmentPixelFormat = layerRenderer.configuration.depthFormat
+        pipelineDescriptor.maxVertexAmplificationCount = layerRenderer.properties.viewCount
+        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    }
+
     // Solid-colour pipeline for the debug stats bars. Same single-sample /
     // amplified setup as the quad.
     static func buildStatsBarPipeline(device: MTLDevice,
@@ -200,6 +262,15 @@ actor Renderer {
         pipelineDescriptor.depthAttachmentPixelFormat = layerRenderer.configuration.depthFormat
         pipelineDescriptor.maxVertexAmplificationCount = layerRenderer.properties.viewCount
         return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    }
+
+    // Depth-disabled state for the full-screen stereo blit: always passes, never
+    // writes, so the game image fills the eye regardless of the depth buffer.
+    static func buildNoDepthStencilState(device: MTLDevice) -> MTLDepthStencilState {
+        let d = MTLDepthStencilDescriptor()
+        d.depthCompareFunction = MTLCompareFunction.always
+        d.isDepthWriteEnabled = false
+        return device.makeDepthStencilState(descriptor: d)!
     }
 
     static func buildDepthStencilState(device: MTLDevice) -> MTLDepthStencilState {
@@ -250,6 +321,19 @@ actor Renderer {
         commandBuffer.useResidencySet(self.residencySets[uniformBufferIndex])
         #endif
 
+        // A command-buffer error blanks the WHOLE frame (base clear included), so
+        // "everything black once stereo is on" could be a runtime error at commit.
+        // Log it (throttled) -- silent when there is none.
+        commandBuffer.addCompletedHandler { cb in
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - vcLastCBErrorLog >= 1.0 {
+                vcLastCBErrorLog = now
+                let ms = (cb.gpuEndTime - cb.gpuStartTime) * 1000.0
+                let errStr = cb.error.map { " ERROR \(($0 as NSError).domain) code=\(($0 as NSError).code) \($0.localizedDescription)" } ?? ""
+                print("[vc-quad] cb completed: status=\(cb.status.rawValue) gpu=\(String(format: "%.2f", ms))ms\(errStr)")
+            }
+        }
+
         // Capture this frame's GPU time for the stats overlay (read next frame).
         if vcDebugStats {
             let stats = self.frameStats
@@ -280,12 +364,22 @@ actor Renderer {
         // empty (black) frame so the pipeline keeps flowing.
         let presentationTime = drawables[0].frameTiming.presentationTime.timeInterval
         guard let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: presentationTime) else {
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - lastPresentLogTime >= 1.0 {
+                lastPresentLogTime = now
+                print("[vc-quad] EMPTY frame: queryDeviceAnchor returned nil (provider not running) -> drawable dropped")
+            }
             frame.startSubmission()
             for drawable in drawables {
                 let clearPass = MTLRenderPassDescriptor()
                 clearPass.colorAttachments[0].texture = drawable.colorTextures[0]
                 clearPass.colorAttachments[0].loadAction = .clear
-                clearPass.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
+                // Diagnostic: BLUE (not black) so the no-anchor/dropped path is
+                // visually distinct from the NORMAL red base clear. If a stereo
+                // frame shows blue, queryDeviceAnchor is returning nil under stereo.
+                clearPass.colorAttachments[0].clearColor = vcStereoBaseClear
+                    ? MTLClearColor(red: 0.0, green: 0.0, blue: 1.0, alpha: 1.0)
+                    : MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
                 clearPass.colorAttachments[0].storeAction = .store
                 clearPass.rasterizationRateMap = drawable.rasterizationRateMaps.first
                 if layerRenderer.configuration.layout == .layered {
@@ -328,6 +422,11 @@ actor Renderer {
         // Present LAST: base clear, optional triangle, game quad and stats bars
         // are all encoded above. Anything encoded AFTER encodePresent never
         // reaches the display, so presentation must come after every content pass.
+        let nowPresent = CFAbsoluteTimeGetCurrent()
+        if nowPresent - lastPresentLogTime >= 1.0 {
+            lastPresentLogTime = nowPresent
+            print("[vc-quad] present: NORMAL path, drawables=\(drawables.count) anchor0set=\(drawables[0].deviceAnchor != nil) heldEyeCount=\(heldEyeCount)")
+        }
         for drawable in drawables {
             drawable.encodePresent(commandBuffer: commandBuffer)
         }
@@ -353,11 +452,20 @@ actor Renderer {
         let renderPassDescriptor = MTLRenderPassDescriptor()
         renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
         renderPassDescriptor.colorAttachments[0].loadAction = .clear
-        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
+        // Diagnostic: on stereo frames, redden the base clear to prove the frame
+        // presents at all (nothing overwrites it when the display pass is broken).
+        let baseClearRed = vcStereoBaseClear && heldEyeCount >= 2
+        renderPassDescriptor.colorAttachments[0].clearColor = baseClearRed
+            ? MTLClearColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
+            : MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
         renderPassDescriptor.colorAttachments[0].storeAction = .store
         renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
         renderPassDescriptor.depthAttachment.loadAction = .clear
-        renderPassDescriptor.depthAttachment.clearDepth = 0.0
+        // Diagnostic: on the stereo base-clear isolation, clear depth to the NEAR
+        // plane (reverse-Z = 1.0) instead of far (0.0). If the red base clear then
+        // becomes visible, the compositor was discarding far-depth (0.0) pixels —
+        // i.e. the real bug is that nothing writes near depth on the stereo path.
+        renderPassDescriptor.depthAttachment.clearDepth = baseClearRed ? 1.0 : 0.0
         renderPassDescriptor.depthAttachment.storeAction = .store
         renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
         if layerRenderer.configuration.layout == .layered {
@@ -544,38 +652,76 @@ actor Renderer {
             heldTexture = Unmanaged<AnyObject>.fromOpaque(texPtr).takeUnretainedValue() as? MTLTexture
             heldIndex = ready.index
             heldWaitValue = ready.wait_value
+            heldEyeCount = ready.eye_count   // the C side decides mono (1) vs stereo (2)
             hasHeldFrame = true
 
-            if !didLogGameTexture, let t = heldTexture {
-                didLogGameTexture = true
-                print("[vc-quad] game texture \(t.width)x\(t.height) pixelFormat=\(t.pixelFormat.rawValue) sameDeviceAsHost=\(t.device.registryID == device.registryID)")
+            if !loggedGameTexEyeCounts.contains(ready.eye_count), let t = heldTexture {
+                loggedGameTexEyeCounts.insert(ready.eye_count)
+                print("[vc-quad] game texture \(t.width)x\(t.height) type=\(t.textureType.rawValue) arrayLen=\(t.arrayLength) eye_count=\(ready.eye_count) pixelFormat=\(t.pixelFormat.rawValue) sameDeviceAsHost=\(t.device.registryID == device.registryID)")
             }
 
-            // Rebuild the quad vertices only when the texture aspect changes.
-            let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
-            if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
-                let verts = gameQuadVertices(aspect: aspect)
-                gameQuadVertexBuffer = verts.withUnsafeBytes {
-                    device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+            // Cinema only needs the world-anchored quad geometry (rebuilt when the
+            // aspect changes). Stereo is a full-screen blit -- no vertex buffer.
+            if ready.eye_count < 2 {
+                let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
+                if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
+                    let verts = gameQuadVertices(aspect: aspect)
+                    gameQuadVertexBuffer = verts.withUnsafeBytes {
+                        device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+                    }
+                    gameQuadVertexBuffer?.label = "GameQuadVertices"
+                    gameQuadAspect = aspect
                 }
-                gameQuadVertexBuffer?.label = "GameQuadVertices"
-                gameQuadAspect = aspect
             }
         }
 
         // Nothing to show until the first-ever acquire; then always show the held
         // frame (fresh this frame, or re-shown on a failed acquire).
-        guard hasHeldFrame, let gameTexture = heldTexture, let quadVertexBuffer = gameQuadVertexBuffer else {
+        guard hasHeldFrame, let gameTexture = heldTexture else {
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - lastPathLogTime >= 1.0 {
+                lastPathLogTime = now
+                print("[vc-quad] path: NO held frame yet (nothing drawn this frame)")
+            }
             return
         }
         let waitValue = heldWaitValue
 
-        // Gate the quad pass on the game's GPU. Skip when there is no event
+        // Per-frame (throttled) which branch runs and on what texture -- proves
+        // whether the stereo branch is chosen every frame and what eye_count the
+        // pause menu actually delivers.
+        let nowPath = CFAbsoluteTimeGetCurrent()
+        if nowPath - lastPathLogTime >= 1.0 {
+            lastPathLogTime = nowPath
+            print("[vc-quad] path: branch=\(heldEyeCount >= 2 ? "STEREO" : "cinema") heldEyeCount=\(heldEyeCount) heldType=\(gameTexture.textureType.rawValue) heldArrayLen=\(gameTexture.arrayLength) wait=\(waitValue)")
+        }
+
+        // Gate the display pass on the game's GPU. Skip when there is no event
         // (fallback path) or no value (VC_NOFENCE) — waiting on a value that is
         // never signalled would stall the frame.
-        if let event = gameSharedEvent, waitValue != 0 {
+        if let event = gameSharedEvent, waitValue != 0, !vcStereoNoWait {
             commandBuffer.encodeWaitForEvent(event, value: waitValue)
         }
+
+        // Stereo: the game image IS the view -> full-screen blit, slice per eye.
+        // The mode is driven by the held frame's eye_count, so a runtime cinema
+        // <-> stereo switch on the C side is followed with no restart.
+        if heldEyeCount >= 2 {
+            // Frame-level isolation: skip the display pass entirely so the ONLY
+            // pass touching colorTextures[0] on a stereo frame is render()'s red
+            // base clear. If the eye then shows RED, the stereo frame presents fine
+            // and the bug is inside encodeGameStereoFullscreen; if it stays BLACK,
+            // an eye_count==2 frame is not being presented/composited at all.
+            if vcStereoBaseClear { return }
+            if !didLogStereoDisplay {
+                didLogStereoDisplay = true
+                print("[vc-quad] stereo display path ACTIVE (full-screen, slice per eye)\(vcStereoTestFill ? " [TESTFILL: eye0=red eye1=green]" : "")")
+            }
+            encodeGameStereoFullscreen(drawables: drawables, commandBuffer: commandBuffer, texture: gameTexture)
+            return
+        }
+
+        guard let quadVertexBuffer = gameQuadVertexBuffer else { return }
 
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()
@@ -638,6 +784,98 @@ actor Renderer {
                                          index: 1)
             renderEncoder.setFragmentTexture(gameTexture, index: 0)
 
+            renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            renderEncoder.endEncoding()
+        }
+    }
+
+    /// Full-screen stereo blit: the game's 2D-array texture (slice 0 = left, 1 =
+    /// right) fills each eye in one vertex-amplified pass. amplification_id picks
+    /// the source slice; the view mapping routes it to drawable slice i, so eyes
+    /// are not swapped. No geometry, no view-projection, depth disabled.
+    private func encodeGameStereoFullscreen(drawables: [LayerRenderer.Drawable],
+                                            commandBuffer: MTLCommandBuffer,
+                                            texture: MTLTexture) {
+        // Full-screen quad in CLIP space (triangle strip), built once. uv =
+        // clip*0.5+0.5 so the orientation matches the cinema quad exactly.
+        if stereoFullscreenVertexBuffer == nil {
+            // z = 1 = NEAR plane in reverse-Z. The compositor discards far-depth
+            // (0.0) pixels, so the full-screen image must write a near depth or it
+            // never reaches the display (this was the stereo black-screen root).
+            let verts: [Float] = [
+                -1, -1, 1,  0, 0,   // bottom-left
+                 1, -1, 1,  1, 0,   // bottom-right
+                -1,  1, 1,  0, 1,   // top-left
+                 1,  1, 1,  1, 1,   // top-right
+            ]
+            stereoFullscreenVertexBuffer = verts.withUnsafeBytes {
+                device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+            }
+            stereoFullscreenVertexBuffer?.label = "StereoFullscreenVertices"
+        }
+        guard let fsVerts = stereoFullscreenVertexBuffer else { return }
+
+        for drawable in drawables {
+            let renderPassDescriptor = MTLRenderPassDescriptor()
+            renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
+            renderPassDescriptor.colorAttachments[0].loadAction = vcStereoClearTest ? .clear : .load
+            renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
+            renderPassDescriptor.colorAttachments[0].storeAction = .store
+            renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
+            renderPassDescriptor.depthAttachment.loadAction = .load
+            renderPassDescriptor.depthAttachment.storeAction = .store
+            renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
+            if layerRenderer.configuration.layout == .layered {
+                renderPassDescriptor.renderTargetArrayLength = drawable.views.count
+            }
+
+            // Clear-only bisection: prove the pass reaches the presented drawable.
+            // Clears BOTH slices to red, no draw/pipeline/geometry/amplification.
+            if vcStereoClearTest {
+                guard let clearEnc = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
+                clearEnc.label = "Game Stereo ClearTest (red)"
+                clearEnc.endEncoding()
+                continue
+            }
+
+            #if !targetEnvironment(simulator)
+            let residencySet = self.residencySets[uniformBufferIndex]
+            residencySet.addAllocations([texture, fsVerts])
+            residencySet.commit()
+            #endif
+
+            guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+                return
+            }
+            renderEncoder.label = "Game Stereo Fullscreen"
+            renderEncoder.setCullMode(.none)
+            renderEncoder.setRenderPipelineState(vcStereoTestFill ? gameStereoTestPipeline : gameStereoPipeline)
+            // Write near depth (verts at z=1, reverse-Z) so the compositor keeps
+            // these pixels; noDepthState left depth at the far base-clear (0.0) and
+            // the whole full-screen image was discarded -> stereo black screen.
+            renderEncoder.setDepthStencilState(depthState)
+
+            let viewports = drawable.views.map { $0.textureMap.viewport }
+            renderEncoder.setViewports(viewports)
+
+            if drawable.views.count > 1 {
+                var viewMappings = (0..<drawable.views.count).map {
+                    MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: UInt32($0),
+                                                      renderTargetArrayIndexOffset: UInt32($0))
+                }
+                renderEncoder.setVertexAmplificationCount(viewports.count, viewMappings: &viewMappings)
+            }
+
+            let nowDraw = CFAbsoluteTimeGetCurrent()
+            if nowDraw - lastStereoDrawLogTime >= 1.0 {
+                lastStereoDrawLogTime = nowDraw
+                let ct = drawable.colorTextures[0]
+                let vp = viewports.first
+                print("[vc-quad] stereo DRAW: layout=\(String(describing: layerRenderer.configuration.layout)) drawables=\(drawables.count) views=\(drawable.views.count) colorType=\(ct.textureType.rawValue) colorArrayLen=\(ct.arrayLength) rateMap=\(drawable.rasterizationRateMaps.first != nil) ampSet=\(drawable.views.count > 1) vp0=\(vp.map { "\($0.originX),\($0.originY) \($0.width)x\($0.height) z[\($0.znear),\($0.zfar)]" } ?? "nil") -> 4-vert strip")
+            }
+
+            renderEncoder.setVertexBuffer(fsVerts, offset: 0, index: 0)
+            renderEncoder.setFragmentTexture(texture, index: 0)
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()
         }
