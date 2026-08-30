@@ -21,23 +21,6 @@ nonisolated let vcDebugStats = ProcessInfo.processInfo.environment["VC_DEBUG_STA
 // game texture, to tell "pass broken" from "sampling broken". Off by default.
 nonisolated let vcStereoTestFill = ProcessInfo.processInfo.environment["VC_STEREO_TESTFILL"] == "1"
 
-// Deeper bisection: the stereo pass CLEARS the drawable to red (no draw, no
-// pipeline, no geometry, no amplification). If red shows, the pass plumbing
-// reaches the display and only the draw is at fault; if still black, the pass
-// output never reaches the presented drawable. Off by default.
-nonisolated let vcStereoClearTest = ProcessInfo.processInfo.environment["VC_STEREO_CLEARTEST"] == "1"
-
-// Sync bisection: skip the shared-event wait before the display pass. If the
-// screen then shows content (possibly torn), the wait was stalling the command
-// buffer past the frame deadline -> drawable dropped. Diagnostic only.
-nonisolated let vcStereoNoWait = ProcessInfo.processInfo.environment["VC_STEREO_NOWAIT"] == "1"
-
-// Frame-level bisection: colour the BASE clear (render(), the known-good first
-// pass) red on stereo frames. If stereo frames then show red, the frame presents
-// fine and only the second (display) pass is at fault; if still black, the whole
-// stereo frame is being dropped by the compositor. Diagnostic only.
-nonisolated let vcStereoBaseClear = ProcessInfo.processInfo.environment["VC_STEREO_BASECLEAR"] == "1"
-
 // Throttle for the (off-thread) command-buffer error logger.
 nonisolated(unsafe) var vcLastCBErrorLog: Double = 0
 
@@ -325,12 +308,12 @@ actor Renderer {
         // "everything black once stereo is on" could be a runtime error at commit.
         // Log it (throttled) -- silent when there is none.
         commandBuffer.addCompletedHandler { cb in
-            let now = CFAbsoluteTimeGetCurrent()
-            if now - vcLastCBErrorLog >= 1.0 {
-                vcLastCBErrorLog = now
-                let ms = (cb.gpuEndTime - cb.gpuStartTime) * 1000.0
-                let errStr = cb.error.map { " ERROR \(($0 as NSError).domain) code=\(($0 as NSError).code) \($0.localizedDescription)" } ?? ""
-                print("[vc-quad] cb completed: status=\(cb.status.rawValue) gpu=\(String(format: "%.2f", ms))ms\(errStr)")
+            if cb.status == .error, let e = cb.error {
+                let now = CFAbsoluteTimeGetCurrent()
+                if now - vcLastCBErrorLog >= 1.0 {
+                    vcLastCBErrorLog = now
+                    print("[vc-quad] COMMAND BUFFER ERROR: \((e as NSError).domain) code=\((e as NSError).code) \(e.localizedDescription)")
+                }
             }
         }
 
@@ -374,12 +357,7 @@ actor Renderer {
                 let clearPass = MTLRenderPassDescriptor()
                 clearPass.colorAttachments[0].texture = drawable.colorTextures[0]
                 clearPass.colorAttachments[0].loadAction = .clear
-                // Diagnostic: BLUE (not black) so the no-anchor/dropped path is
-                // visually distinct from the NORMAL red base clear. If a stereo
-                // frame shows blue, queryDeviceAnchor is returning nil under stereo.
-                clearPass.colorAttachments[0].clearColor = vcStereoBaseClear
-                    ? MTLClearColor(red: 0.0, green: 0.0, blue: 1.0, alpha: 1.0)
-                    : MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
+                clearPass.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
                 clearPass.colorAttachments[0].storeAction = .store
                 clearPass.rasterizationRateMap = drawable.rasterizationRateMaps.first
                 if layerRenderer.configuration.layout == .layered {
@@ -452,20 +430,11 @@ actor Renderer {
         let renderPassDescriptor = MTLRenderPassDescriptor()
         renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
         renderPassDescriptor.colorAttachments[0].loadAction = .clear
-        // Diagnostic: on stereo frames, redden the base clear to prove the frame
-        // presents at all (nothing overwrites it when the display pass is broken).
-        let baseClearRed = vcStereoBaseClear && heldEyeCount >= 2
-        renderPassDescriptor.colorAttachments[0].clearColor = baseClearRed
-            ? MTLClearColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
-            : MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
+        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
         renderPassDescriptor.colorAttachments[0].storeAction = .store
         renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
         renderPassDescriptor.depthAttachment.loadAction = .clear
-        // Diagnostic: on the stereo base-clear isolation, clear depth to the NEAR
-        // plane (reverse-Z = 1.0) instead of far (0.0). If the red base clear then
-        // becomes visible, the compositor was discarding far-depth (0.0) pixels —
-        // i.e. the real bug is that nothing writes near depth on the stereo path.
-        renderPassDescriptor.depthAttachment.clearDepth = baseClearRed ? 1.0 : 0.0
+        renderPassDescriptor.depthAttachment.clearDepth = 0.0
         renderPassDescriptor.depthAttachment.storeAction = .store
         renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
         if layerRenderer.configuration.layout == .layered {
@@ -699,7 +668,7 @@ actor Renderer {
         // Gate the display pass on the game's GPU. Skip when there is no event
         // (fallback path) or no value (VC_NOFENCE) — waiting on a value that is
         // never signalled would stall the frame.
-        if let event = gameSharedEvent, waitValue != 0, !vcStereoNoWait {
+        if let event = gameSharedEvent, waitValue != 0 {
             commandBuffer.encodeWaitForEvent(event, value: waitValue)
         }
 
@@ -707,12 +676,6 @@ actor Renderer {
         // The mode is driven by the held frame's eye_count, so a runtime cinema
         // <-> stereo switch on the C side is followed with no restart.
         if heldEyeCount >= 2 {
-            // Frame-level isolation: skip the display pass entirely so the ONLY
-            // pass touching colorTextures[0] on a stereo frame is render()'s red
-            // base clear. If the eye then shows RED, the stereo frame presents fine
-            // and the bug is inside encodeGameStereoFullscreen; if it stays BLACK,
-            // an eye_count==2 frame is not being presented/composited at all.
-            if vcStereoBaseClear { return }
             if !didLogStereoDisplay {
                 didLogStereoDisplay = true
                 print("[vc-quad] stereo display path ACTIVE (full-screen, slice per eye)\(vcStereoTestFill ? " [TESTFILL: eye0=red eye1=green]" : "")")
@@ -802,11 +765,25 @@ actor Renderer {
             // z = 1 = NEAR plane in reverse-Z. The compositor discards far-depth
             // (0.0) pixels, so the full-screen image must write a near depth or it
             // never reaches the display (this was the stereo black-screen root).
+            //
+            // uv.x is MIRRORED (left clip corner samples uv.x=1) on purpose. ANGLE's
+            // GL-render into a per-slice array EGLImage (EGL_METAL_TEXTURE_ARRAY_SLICE
+            // _ANGLE) arrives HORIZONTALLY FLIPPED in the Metal texture. Measured: a
+            // C-side slice probe painting GL-left red (VC_STEREO_SLICEPROBE) showed up
+            // on the RIGHT here, while the display/uv mapping itself is upright (the
+            // uv-based testfill was correct). So we cancel the flip in uv.x. This is
+            // the SAME kind of orientation fix the cinema quad already applies in uv.y
+            // (see gameQuadVertices: "V is flipped ... GL bottom-left vs Metal top-
+            // left") -- it just differs because cinema samples a 2D texture whereas
+            // stereo samples ARRAY SLICES, which ANGLE flips on the X axis, not Y.
+            // Don't "unify" the two UV conventions: they compensate different ANGLE
+            // paths. Only uv.x is flipped (image was mirrored horizontally, not upside
+            // down), so uv.y matches the cinema convention.
             let verts: [Float] = [
-                -1, -1, 1,  0, 0,   // bottom-left
-                 1, -1, 1,  1, 0,   // bottom-right
-                -1,  1, 1,  0, 1,   // top-left
-                 1,  1, 1,  1, 1,   // top-right
+                -1, -1, 1,  1, 0,   // bottom-left  (clip left  -> uv.x=1: undo slice X-flip)
+                 1, -1, 1,  0, 0,   // bottom-right (clip right -> uv.x=0)
+                -1,  1, 1,  1, 1,   // top-left
+                 1,  1, 1,  0, 1,   // top-right
             ]
             stereoFullscreenVertexBuffer = verts.withUnsafeBytes {
                 device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
@@ -818,8 +795,7 @@ actor Renderer {
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()
             renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
-            renderPassDescriptor.colorAttachments[0].loadAction = vcStereoClearTest ? .clear : .load
-            renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
+            renderPassDescriptor.colorAttachments[0].loadAction = .load
             renderPassDescriptor.colorAttachments[0].storeAction = .store
             renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
             renderPassDescriptor.depthAttachment.loadAction = .load
@@ -827,15 +803,6 @@ actor Renderer {
             renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
             if layerRenderer.configuration.layout == .layered {
                 renderPassDescriptor.renderTargetArrayLength = drawable.views.count
-            }
-
-            // Clear-only bisection: prove the pass reaches the presented drawable.
-            // Clears BOTH slices to red, no draw/pipeline/geometry/amplification.
-            if vcStereoClearTest {
-                guard let clearEnc = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
-                clearEnc.label = "Game Stereo ClearTest (red)"
-                clearEnc.endEncoding()
-                continue
             }
 
             #if !targetEnvironment(simulator)
