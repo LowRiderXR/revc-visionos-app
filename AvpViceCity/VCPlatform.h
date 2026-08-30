@@ -152,6 +152,37 @@ void vc_set_matrix_override(int active);
 /// replace (used by the matrix self-test). Head tracking sets this on.
 void vc_set_view_compose(int on);
 
+// ---------------------------------------------------------------------------
+// Per-eye stereo matrices (Swift -> reVC game thread). Swift pushes the real
+// CompositorServices eye view + projection matrices ONCE PER FRAME, ALREADY
+// CONVERTED to librw convention (left-handed / +Z eye / clip depth -1..1,
+// column-major simd), by the SAME F/D basis change the head-pose setters above
+// use. Buffered under a lock; the game thread reads the latest via the getter.
+//
+// Translations are in METRES (compositor units) -- deliberately NOT scaled to
+// Vice City game units, so the logged eye separation reads the true ~0.06 m.
+// The metres->game-units scale and how these compose with the game camera are
+// the RENDER PATH's job (a later step), not this seam's.
+//
+// Cinema does NOT populate this: `valid` stays 0 and the getter returns false,
+// so the eye passes keep their current behaviour until the render path consumes
+// it. eyes[0] = left, eyes[1] = right (matching the drawable's view order).
+// ---------------------------------------------------------------------------
+typedef struct vc_stereo_eye_matrices_t {
+    simd_float4x4 view[2];        ///< world->eye, librw convention, metres
+    simd_float4x4 projection[2];  ///< librw clip, depth -1..1
+    uint32_t      valid;          ///< 0 = not populated (cinema); 1 = valid stereo
+} vc_stereo_eye_matrices_t;
+
+/// Push the latest per-eye matrices. Called from the Swift render thread once per
+/// stereo frame; buffered under a lock. Passing NULL is a no-op.
+void vc_set_stereo_eye_matrices(const vc_stereo_eye_matrices_t *eyes);
+
+/// Read the latest per-eye matrices (reVC game thread). Returns false and leaves
+/// `out` untouched if none were ever pushed (cinema / not yet available), so the
+/// caller can fall back to its current behaviour.
+bool vc_get_stereo_eye_matrices(vc_stereo_eye_matrices_t *out);
+
 #ifdef __cplusplus
 }
 #endif

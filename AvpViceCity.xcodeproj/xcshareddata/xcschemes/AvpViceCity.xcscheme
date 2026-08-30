@@ -104,7 +104,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_STEREO_TESTFILL"
-            value = "1"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -125,6 +125,16 @@
          <EnvironmentVariable
             key = "VC_STEREO_SLICEPROBE"
             value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_KEEP_PROJ"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_WORLD_SCALE"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>

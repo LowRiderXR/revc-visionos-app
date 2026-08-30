@@ -566,6 +566,33 @@ actor Renderer {
         frame.presentation_time = drawable.frameTiming.presentationTime.timeInterval
 
         withUnsafePointer(to: &frame) { vc_renderer_render($0) }
+
+        // Stereo only: hand the REAL per-eye compositor matrices to the reVC game
+        // thread via the C seam, converted to librw convention with the SAME F/D
+        // basis change as the head-pose seam (see pushHeadMatrices): world->eye is
+        // F·V_cs·F, projection is D·P_cs·F. Translations stay in METRES (the seam
+        // logs ~0.06 m eye separation); the metres->game-units scale and how these
+        // compose with the game camera are the render path's job (Prompt B). This
+        // only fills + logs here, so cinema and stereo still render exactly as
+        // before. Cinema leaves it unset -> vc_get_stereo_eye_matrices returns false.
+        if vc_render_mode() == VC_MODE_STEREO && viewCount == 2 {
+            let F = simd_float4x4(diagonal: SIMD4<Float>(1, 1, -1, 1))
+            let D = simd_float4x4(columns: (SIMD4<Float>(1, 0, 0, 0),
+                                            SIMD4<Float>(0, 1, 0, 0),
+                                            SIMD4<Float>(0, 0, 2, 0),
+                                            SIMD4<Float>(0, 0, -1, 1)))
+            func librwEye(_ i: Int) -> (view: simd_float4x4, proj: simd_float4x4) {
+                let vCS = (simdDeviceAnchor * drawable.views[i].transform).inverse  // world->eye (Metal RH, -Z)
+                let pCS = drawable.computeProjection(viewIndex: i)                  // Metal RH, depth 0..1
+                return (F * vCS * F, D * pCS * F)                                   // librw view / projection
+            }
+            let left = librwEye(0), right = librwEye(1)
+            var eyes = vc_stereo_eye_matrices_t()
+            eyes.view = (left.view, right.view)
+            eyes.projection = (left.proj, right.proj)
+            eyes.valid = 1
+            withUnsafePointer(to: &eyes) { vc_set_stereo_eye_matrices($0) }
+        }
     }
 
     /// Build the world-anchored quad vertices (triangle strip: BL, BR, TL, TR)
@@ -629,18 +656,17 @@ actor Renderer {
                 print("[vc-quad] game texture \(t.width)x\(t.height) type=\(t.textureType.rawValue) arrayLen=\(t.arrayLength) eye_count=\(ready.eye_count) pixelFormat=\(t.pixelFormat.rawValue) sameDeviceAsHost=\(t.device.registryID == device.registryID)")
             }
 
-            // Cinema only needs the world-anchored quad geometry (rebuilt when the
-            // aspect changes). Stereo is a full-screen blit -- no vertex buffer.
-            if ready.eye_count < 2 {
-                let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
-                if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
-                    let verts = gameQuadVertices(aspect: aspect)
-                    gameQuadVertexBuffer = verts.withUnsafeBytes {
-                        device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
-                    }
-                    gameQuadVertexBuffer?.label = "GameQuadVertices"
-                    gameQuadAspect = aspect
+            // Both modes draw the same world-anchored quad geometry (rebuilt when
+            // the aspect changes): cinema samples it as a 2D texture, stereo samples
+            // it per eye as an array slice so the two eyes CONVERGE on this screen.
+            let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
+            if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
+                let verts = gameQuadVertices(aspect: aspect)
+                gameQuadVertexBuffer = verts.withUnsafeBytes {
+                    device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
                 }
+                gameQuadVertexBuffer?.label = "GameQuadVertices"
+                gameQuadAspect = aspect
             }
         }
 
@@ -752,45 +778,17 @@ actor Renderer {
         }
     }
 
-    /// Full-screen stereo blit: the game's 2D-array texture (slice 0 = left, 1 =
-    /// right) fills each eye in one vertex-amplified pass. amplification_id picks
-    /// the source slice; the view mapping routes it to drawable slice i, so eyes
-    /// are not swapped. No geometry, no view-projection, depth disabled.
+    /// Projected-screen stereo: the game's 2D-array texture (slice 0 = left, 1 =
+    /// right) is shown on the SAME world-anchored quad as cinema, but each eye
+    /// samples its own slice. One per-eye view-projection makes both eyes CONVERGE
+    /// on the screen; the per-eye render disparity (baked into the slices) gives
+    /// the 3D. amplification_id selects the source slice and the view mapping
+    /// routes it to drawable slice i, so eyes are not swapped. A non-projected
+    /// full-screen blit could not fuse (no common world point to converge on).
     private func encodeGameStereoFullscreen(drawables: [LayerRenderer.Drawable],
                                             commandBuffer: MTLCommandBuffer,
                                             texture: MTLTexture) {
-        // Full-screen quad in CLIP space (triangle strip), built once. uv =
-        // clip*0.5+0.5 so the orientation matches the cinema quad exactly.
-        if stereoFullscreenVertexBuffer == nil {
-            // z = 1 = NEAR plane in reverse-Z. The compositor discards far-depth
-            // (0.0) pixels, so the full-screen image must write a near depth or it
-            // never reaches the display (this was the stereo black-screen root).
-            //
-            // uv.x is MIRRORED (left clip corner samples uv.x=1) on purpose. ANGLE's
-            // GL-render into a per-slice array EGLImage (EGL_METAL_TEXTURE_ARRAY_SLICE
-            // _ANGLE) arrives HORIZONTALLY FLIPPED in the Metal texture. Measured: a
-            // C-side slice probe painting GL-left red (VC_STEREO_SLICEPROBE) showed up
-            // on the RIGHT here, while the display/uv mapping itself is upright (the
-            // uv-based testfill was correct). So we cancel the flip in uv.x. This is
-            // the SAME kind of orientation fix the cinema quad already applies in uv.y
-            // (see gameQuadVertices: "V is flipped ... GL bottom-left vs Metal top-
-            // left") -- it just differs because cinema samples a 2D texture whereas
-            // stereo samples ARRAY SLICES, which ANGLE flips on the X axis, not Y.
-            // Don't "unify" the two UV conventions: they compensate different ANGLE
-            // paths. Only uv.x is flipped (image was mirrored horizontally, not upside
-            // down), so uv.y matches the cinema convention.
-            let verts: [Float] = [
-                -1, -1, 1,  1, 0,   // bottom-left  (clip left  -> uv.x=1: undo slice X-flip)
-                 1, -1, 1,  0, 0,   // bottom-right (clip right -> uv.x=0)
-                -1,  1, 1,  1, 1,   // top-left
-                 1,  1, 1,  0, 1,   // top-right
-            ]
-            stereoFullscreenVertexBuffer = verts.withUnsafeBytes {
-                device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
-            }
-            stereoFullscreenVertexBuffer?.label = "StereoFullscreenVertices"
-        }
-        guard let fsVerts = stereoFullscreenVertexBuffer else { return }
+        guard let quadVertexBuffer = gameQuadVertexBuffer else { return }
 
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()
@@ -807,19 +805,16 @@ actor Renderer {
 
             #if !targetEnvironment(simulator)
             let residencySet = self.residencySets[uniformBufferIndex]
-            residencySet.addAllocations([texture, fsVerts])
+            residencySet.addAllocations([texture, quadVertexBuffer])
             residencySet.commit()
             #endif
 
             guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
                 return
             }
-            renderEncoder.label = "Game Stereo Fullscreen"
+            renderEncoder.label = "Game Stereo Screen"
             renderEncoder.setCullMode(.none)
             renderEncoder.setRenderPipelineState(vcStereoTestFill ? gameStereoTestPipeline : gameStereoPipeline)
-            // Write near depth (verts at z=1, reverse-Z) so the compositor keeps
-            // these pixels; noDepthState left depth at the far base-clear (0.0) and
-            // the whole full-screen image was discarded -> stereo black screen.
             renderEncoder.setDepthStencilState(depthState)
 
             let viewports = drawable.views.map { $0.textureMap.viewport }
@@ -833,15 +828,31 @@ actor Renderer {
                 renderEncoder.setVertexAmplificationCount(viewports.count, viewMappings: &viewMappings)
             }
 
+            // Per-eye world -> clip, SAME derivation as the cinema quad, so both
+            // eyes converge on the world-anchored screen. Only the sampled slice
+            // differs per eye (in the fragment shader), which supplies the 3D.
+            let simdDeviceAnchor = drawable.deviceAnchor?.originFromAnchorTransform ?? matrix_identity_float4x4
+            var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
+            for i in 0..<min(drawable.views.count, 2) {
+                let view = drawable.views[i]
+                let viewMatrix: simd_float4x4 = vcHeadTrackingMode != 0
+                    ? view.transform.inverse
+                    : (simdDeviceAnchor * view.transform).inverse
+                let projectionMatrix = drawable.computeProjection(viewIndex: i)
+                viewProjection[i] = projectionMatrix * viewMatrix
+            }
+
             let nowDraw = CFAbsoluteTimeGetCurrent()
             if nowDraw - lastStereoDrawLogTime >= 1.0 {
                 lastStereoDrawLogTime = nowDraw
                 let ct = drawable.colorTextures[0]
-                let vp = viewports.first
-                print("[vc-quad] stereo DRAW: layout=\(String(describing: layerRenderer.configuration.layout)) drawables=\(drawables.count) views=\(drawable.views.count) colorType=\(ct.textureType.rawValue) colorArrayLen=\(ct.arrayLength) rateMap=\(drawable.rasterizationRateMaps.first != nil) ampSet=\(drawable.views.count > 1) vp0=\(vp.map { "\($0.originX),\($0.originY) \($0.width)x\($0.height) z[\($0.znear),\($0.zfar)]" } ?? "nil") -> 4-vert strip")
+                print("[vc-quad] stereo DRAW (projected screen): views=\(drawable.views.count) colorArrayLen=\(ct.arrayLength) srcArrayLen=\(texture.arrayLength) headLock=\(vcHeadTrackingMode != 0)")
             }
 
-            renderEncoder.setVertexBuffer(fsVerts, offset: 0, index: 0)
+            renderEncoder.setVertexBuffer(quadVertexBuffer, offset: 0, index: 0)
+            renderEncoder.setVertexBytes(&viewProjection,
+                                         length: MemoryLayout<matrix_float4x4>.stride * 2,
+                                         index: 1)
             renderEncoder.setFragmentTexture(texture, index: 0)
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()

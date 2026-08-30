@@ -12,6 +12,8 @@
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#import <os/lock.h>
+#import <math.h>
 
 #import "VCPlatform.h"
 
@@ -376,4 +378,55 @@ void vc_renderer_shutdown(void) {
     gVertexFunction = nil;
     gFragmentFunction = nil;
     gDevice = nil;
+}
+
+// ---------------------------------------------------------------------------
+// Per-eye stereo matrices seam (Swift render thread -> reVC game thread).
+// Latest-wins under a lock: the Swift side overwrites the whole struct once per
+// frame, the game thread reads the newest snapshot. Zero-initialised, so `valid`
+// is 0 (cinema / nothing pushed) until the first stereo push.
+// ---------------------------------------------------------------------------
+static vc_stereo_eye_matrices_t gStereoEyes = {0};
+static os_unfair_lock          gStereoEyesLock = OS_UNFAIR_LOCK_INIT;
+
+void vc_set_stereo_eye_matrices(const vc_stereo_eye_matrices_t *eyes) {
+    if (eyes == NULL) return;
+
+    os_unfair_lock_lock(&gStereoEyesLock);
+    gStereoEyes = *eyes;
+    os_unfair_lock_unlock(&gStereoEyesLock);
+
+    // Throttled (~1/s): per-eye translation + first projection row, so the eye
+    // separation can be checked -- expect ~0.06 m (real IPD), NOT 1.0 (the old
+    // synthetic +/-0.5 m offset the render path still uses until it consumes this).
+    if (!eyes->valid) return;
+    static double lastLog = 0.0;
+    double nowT = CFAbsoluteTimeGetCurrent();
+    if (nowT - lastLog < 1.0) return;
+    lastLog = nowT;
+
+    simd_float4 tL = eyes->view[0].columns[3];
+    simd_float4 tR = eyes->view[1].columns[3];
+    float dx = tL.x - tR.x, dy = tL.y - tR.y, dz = tL.z - tR.z;
+    float sep = sqrtf(dx*dx + dy*dy + dz*dz);
+    // proj.row0 = first ROW of the column-major matrix = columns[c].x, matching
+    // the Phase 1 log format so the two can be compared directly.
+    NSLog(@"[vc-eyes] L view.t=(%.4f, %.4f, %.4f) proj.row0=(%.4f, %.4f, %.4f, %.4f)",
+          tL.x, tL.y, tL.z,
+          eyes->projection[0].columns[0].x, eyes->projection[0].columns[1].x,
+          eyes->projection[0].columns[2].x, eyes->projection[0].columns[3].x);
+    NSLog(@"[vc-eyes] R view.t=(%.4f, %.4f, %.4f) proj.row0=(%.4f, %.4f, %.4f, %.4f)",
+          tR.x, tR.y, tR.z,
+          eyes->projection[1].columns[0].x, eyes->projection[1].columns[1].x,
+          eyes->projection[1].columns[2].x, eyes->projection[1].columns[3].x);
+    NSLog(@"[vc-eyes] eye separation = %.4f m (expect ~0.06, not 1.0)", sep);
+}
+
+bool vc_get_stereo_eye_matrices(vc_stereo_eye_matrices_t *out) {
+    if (out == NULL) return false;
+    os_unfair_lock_lock(&gStereoEyesLock);
+    bool valid = gStereoEyes.valid != 0;
+    if (valid) *out = gStereoEyes;
+    os_unfair_lock_unlock(&gStereoEyesLock);
+    return valid;
 }

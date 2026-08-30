@@ -68,17 +68,16 @@ fragment float4 vc_quad_fragment(VCQuadInOut in [[stage_in]],
 }
 
 // ---------------------------------------------------------------------------
-// Stereo full-screen path. The game hands over a 2D-ARRAY texture (slice 0 =
-// left eye, slice 1 = right). This draws a full-screen triangle per eye in one
-// vertex-amplified pass: [[amplification_id]] selects the source slice, and the
-// view mapping (renderTargetArrayIndexOffset = i) routes it to the drawable's
-// slice i -- so source slice i lands in eye i, not swapped. No geometry, no
-// view-projection: the game image IS the view, filling the eye.
-// Geometry comes from a CLIP-SPACE vertex buffer (VCQuadVertex, positions
-// already in clip space, uv already 0..1) -- the SAME structure as the working
-// cinema quad, just with identity instead of a view-projection. A buffer-less
-// vertex_id-generated triangle rasterized nothing under vertex amplification on
-// this path; the vertex-buffer quad is the proven pattern.
+// Stereo path (PROJECTED SCREEN). The game hands over a 2D-ARRAY texture (slice
+// 0 = left eye, slice 1 = right), each slice rendered from that eye's camera
+// (symmetric projection + IPD offset on the C side). This draws the SAME world-
+// anchored quad as the cinema path -- one per-eye view-projection so both eyes
+// CONVERGE on a common virtual screen -- but each eye samples its own array
+// slice ([[amplification_id]] -> slice i, routed to drawable slice i, not
+// swapped). The per-eye image disparity gives the 3D; the shared screen gives
+// the convergence. A non-projected full-screen blit could NOT fuse: with the
+// eyes' asymmetric (canted) FOVs, two screen-filling images have no common world
+// point to converge on -- proven on device (even two identical slices diverged).
 struct VCStereoInOut {
     float4 position [[position]];
     float2 uv;
@@ -87,10 +86,12 @@ struct VCStereoInOut {
 
 vertex VCStereoInOut vc_stereo_vertex(uint vertexID [[vertex_id]],
                                       ushort amplificationID [[amplification_id]],
-                                      const device VCQuadVertex *verts [[buffer(0)]])
+                                      const device VCQuadVertex *verts [[buffer(0)]],
+                                      constant VCQuadUniforms &uniforms [[buffer(1)]])
 {
     VCStereoInOut out;
-    out.position = float4(verts[vertexID].position, 1.0);   // already clip space
+    float4 world = float4(verts[vertexID].position, 1.0);   // world space (as cinema)
+    out.position = uniforms.viewProjection[amplificationID] * world;
     out.uv = verts[vertexID].uv;
     out.eye = amplificationID;
     return out;
@@ -100,7 +101,11 @@ fragment float4 vc_stereo_fragment(VCStereoInOut in [[stage_in]],
                                    texture2d_array<float> tex [[texture(0)]])
 {
     constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
-    float4 c = tex.sample(s, in.uv, in.eye);
+    // uv.x MIRRORED: ANGLE's GL-render into a per-slice array EGLImage arrives
+    // horizontally flipped in the Metal texture (measured via slice probe). The
+    // cinema 2D path is not flipped, hence only the array path compensates here.
+    float2 uv = float2(1.0 - in.uv.x, in.uv.y);
+    float4 c = tex.sample(s, uv, in.eye);
     return float4(vc_srgb_to_linear(c.rgb), c.a);
 }
 
