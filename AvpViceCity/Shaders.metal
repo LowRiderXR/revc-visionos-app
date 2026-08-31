@@ -110,9 +110,9 @@ fragment float4 vc_stereo_fragment(VCStereoInOut in [[stage_in]],
 }
 
 // Diagnostic (VC_STEREO_TESTFILL=1): ignore the texture, paint eye 0 red / eye 1
-// green. Proves the full-screen triangle rasterizes, the pipeline runs, and the
-// amplification routes each eye to its slice -- isolating "pass broken" from
-// "sampling broken", and revealing a left/right swap.
+// green. Proves the pass rasterizes, the pipeline runs, and the amplification
+// routes each eye to its slice -- isolating "pass broken" from "sampling broken",
+// and revealing a left/right swap. Shared by both display paths (uses only eye).
 fragment float4 vc_stereo_fragment_testfill(VCStereoInOut in [[stage_in]])
 {
     return in.eye == 0 ? float4(1.0, 0.0, 0.0, 1.0) : float4(0.0, 1.0, 0.0, 1.0);

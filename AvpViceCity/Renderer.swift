@@ -91,17 +91,16 @@ actor Renderer {
 
     // World-anchored quad that displays the reVC/ANGLE game texture.
     let gameQuadPipeline: MTLRenderPipelineState
-    // Full-screen stereo pipeline: samples the 2D-array game texture, one slice
-    // per eye, in a single vertex-amplified pass (used when eye_count == 2).
+    // Stereo pipeline: the 2D-array game texture on a world-anchored screen
+    // projected per eye (slice per eye), single vertex-amplified pass.
     let gameStereoPipeline: MTLRenderPipelineState
-    // Same pipeline but with the test-fill fragment (VC_STEREO_TESTFILL).
+    // Same, with the test-fill fragment (VC_STEREO_TESTFILL).
     let gameStereoTestPipeline: MTLRenderPipelineState
     // Depth-disabled state for the full-screen stereo blit (always fills).
     let noDepthState: MTLDepthStencilState
     var gameSharedEvent: MTLSharedEvent?   // id<MTLSharedEvent> from the game side (lazy)
     var gameQuadVertexBuffer: MTLBuffer?   // rebuilt when the texture aspect changes
     var gameQuadAspect: Float = 0          // width/height the vertex buffer was built for
-    var stereoFullscreenVertexBuffer: MTLBuffer?  // clip-space full-screen quad (built once)
     var didLogColorFormat = false
     // Log the texture description once PER eye_count, not globally: otherwise the
     // first mono (menu) frame permanently swallows the stereo description.
@@ -164,8 +163,10 @@ actor Renderer {
         do {
             gameQuadPipeline = try Self.buildGameQuadPipeline(device: device, layerRenderer: layerRenderer)
             gameStereoPipeline = try Self.buildGameStereoPipeline(device: device, layerRenderer: layerRenderer,
+                                                                  vertex: "vc_stereo_vertex",
                                                                   fragment: "vc_stereo_fragment")
             gameStereoTestPipeline = try Self.buildGameStereoPipeline(device: device, layerRenderer: layerRenderer,
+                                                                      vertex: "vc_stereo_vertex",
                                                                       fragment: "vc_stereo_fragment_testfill")
             statsBarPipeline = try Self.buildStatsBarPipeline(device: device, layerRenderer: layerRenderer)
         } catch {
@@ -218,11 +219,12 @@ actor Renderer {
     // quad so both eyes render in one pass.
     static func buildGameStereoPipeline(device: MTLDevice,
                                         layerRenderer: LayerRenderer,
+                                        vertex: String,
                                         fragment: String) throws -> MTLRenderPipelineState {
         let library = device.makeDefaultLibrary()
         let pipelineDescriptor = MTLRenderPipelineDescriptor()
-        pipelineDescriptor.label = "GameStereoPipeline(\(fragment))"
-        pipelineDescriptor.vertexFunction = library?.makeFunction(name: "vc_stereo_vertex")
+        pipelineDescriptor.label = "GameStereoPipeline(\(vertex),\(fragment))"
+        pipelineDescriptor.vertexFunction = library?.makeFunction(name: vertex)
         pipelineDescriptor.fragmentFunction = library?.makeFunction(name: fragment)
         pipelineDescriptor.rasterSampleCount = 1
         pipelineDescriptor.colorAttachments[0].pixelFormat = layerRenderer.configuration.colorFormat
@@ -536,7 +538,12 @@ actor Renderer {
     }
 
     private func submitFrameToVCRenderer(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer) {
-        if vcHeadTrackingMode != 0 {
+        // Cinema head-tracking uses the mono compose seam. Stereo (CANVAS) does NOT:
+        // the head enters through the projected display quad (computeProjection·view
+        // per eye), so composing the mono head pose into the slice view too would
+        // double-count it. (Head LOOK inside the scene needs the direct-render path,
+        // not the projected-screen blit.)
+        if vcHeadTrackingMode != 0 && vc_render_mode() != VC_MODE_STEREO {
             pushHeadMatrices(drawable: drawable, yawOnly: vcHeadTrackingMode == 2)
         }
 
@@ -698,15 +705,18 @@ actor Renderer {
             commandBuffer.encodeWaitForEvent(event, value: waitValue)
         }
 
-        // Stereo: the game image IS the view -> full-screen blit, slice per eye.
-        // The mode is driven by the held frame's eye_count, so a runtime cinema
-        // <-> stereo switch on the C side is followed with no restart.
+        // Stereo: slice per eye on a world-anchored screen projected per eye (the
+        // ONLY display path that fuses -- a full-FOV blit can't, because the
+        // compositor reprojects colorTextures[i] with its own off-axis
+        // computeProjection(i), which a projected quad satisfies and a blit does
+        // not; proven on device with identical slices). Driven by the held frame's
+        // eye_count, so a runtime cinema <-> stereo switch needs no restart.
         if heldEyeCount >= 2 {
             if !didLogStereoDisplay {
                 didLogStereoDisplay = true
-                print("[vc-quad] stereo display path ACTIVE (full-screen, slice per eye)\(vcStereoTestFill ? " [TESTFILL: eye0=red eye1=green]" : "")")
+                print("[vc-quad] stereo display path ACTIVE (projected screen, slice per eye)\(vcStereoTestFill ? " [TESTFILL: eye0=red eye1=green]" : "")")
             }
-            encodeGameStereoFullscreen(drawables: drawables, commandBuffer: commandBuffer, texture: gameTexture)
+            encodeGameStereoScreen(drawables: drawables, commandBuffer: commandBuffer, texture: gameTexture)
             return
         }
 
@@ -778,16 +788,17 @@ actor Renderer {
         }
     }
 
-    /// Projected-screen stereo: the game's 2D-array texture (slice 0 = left, 1 =
+    /// CANVAS stereo (fallback): the game's 2D-array texture (slice 0 = left, 1 =
     /// right) is shown on the SAME world-anchored quad as cinema, but each eye
     /// samples its own slice. One per-eye view-projection makes both eyes CONVERGE
     /// on the screen; the per-eye render disparity (baked into the slices) gives
-    /// the 3D. amplification_id selects the source slice and the view mapping
-    /// routes it to drawable slice i, so eyes are not swapped. A non-projected
-    /// full-screen blit could not fuse (no common world point to converge on).
-    private func encodeGameStereoFullscreen(drawables: [LayerRenderer.Drawable],
-                                            commandBuffer: MTLCommandBuffer,
-                                            texture: MTLTexture) {
+    /// the 3D -- but it reads like a flat 3D-cinema screen. amplification_id selects
+    /// the source slice and the view mapping routes it to drawable slice i, so eyes
+    /// are not swapped. The slice is symmetric (C side) and sampled with a uv.x flip
+    /// (ANGLE per-slice X-flip). For the immersive VR path see the OFFAXIS blit below.
+    private func encodeGameStereoScreen(drawables: [LayerRenderer.Drawable],
+                                        commandBuffer: MTLCommandBuffer,
+                                        texture: MTLTexture) {
         guard let quadVertexBuffer = gameQuadVertexBuffer else { return }
 
         for drawable in drawables {
