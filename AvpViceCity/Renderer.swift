@@ -38,6 +38,29 @@ nonisolated let vcHeadTrackingMode: Int = {
     }
 }()
 
+// Distance (metres) of the STEREO display quad from the head. At a near distance
+// the quad's own plane adds a fixed convergence on top of the disparity already
+// baked into the two slices -- the "behind glass" 3D-cinema feel. Placing it far
+// (ALVR/Klepton use 500 m) makes the plane's disparity vanish, so perceived depth
+// comes only from the slice content = volumetric. Cinema is unaffected (its quad
+// stays at 2.5 m). Tunable so a too-far quad clipped past the compositor far plane
+// (reverse-Z -> black) can be pulled back on device. VC_CANVAS_DEPTH, default 500.
+nonisolated let vcCanvasDepth: Float = {
+    if let s = ProcessInfo.processInfo.environment["VC_CANVAS_DEPTH"], let d = Float(s), d > 0 {
+        return d
+    }
+    return 500.0
+}()
+
+// Mirror the stereo quad's uv.x. The earlier assumption that ANGLE's per-slice
+// array render arrives X-flipped is contradicted by the hard signals: with the
+// flip ON the stereo controls are reversed (both sticks) and disparity inverts
+// (near objects double) -- i.e. the whole stereo world is mirrored. Default OFF.
+// VC_STEREO_UVFLIP=1 restores the old (mirrored) behaviour for A/B.
+nonisolated let vcStereoUVFlip: Bool = {
+    ProcessInfo.processInfo.environment["VC_STEREO_UVFLIP"] == "1"
+}()
+
 // The 90 Hz frame budget in milliseconds (1/90 s). Full-length bar == budget;
 // longer/red means over budget.
 nonisolated let vcFrameBudgetMs = 1000.0 / 90.0   // 11.1 ms
@@ -99,8 +122,10 @@ actor Renderer {
     // Depth-disabled state for the full-screen stereo blit (always fills).
     let noDepthState: MTLDepthStencilState
     var gameSharedEvent: MTLSharedEvent?   // id<MTLSharedEvent> from the game side (lazy)
-    var gameQuadVertexBuffer: MTLBuffer?   // rebuilt when the texture aspect changes
-    var gameQuadAspect: Float = 0          // width/height the vertex buffer was built for
+    var gameQuadVertexBuffer: MTLBuffer?   // cinema quad, rebuilt when the texture aspect changes
+    var gameQuadAspect: Float = 0          // width/height the cinema vertex buffer was built for
+    var stereoScreenVertexBuffer: MTLBuffer?  // stereo quad (far distance), rebuilt on aspect change
+    var stereoScreenAspect: Float = 0         // width/height the stereo vertex buffer was built for
     var didLogColorFormat = false
     // Log the texture description once PER eye_count, not globally: otherwise the
     // first mono (menu) frame permanently swallows the stereo description.
@@ -602,25 +627,25 @@ actor Renderer {
         }
     }
 
-    /// Build the world-anchored quad vertices (triangle strip: BL, BR, TL, TR)
-    /// for the given texture aspect. Positions are WORLD space, ~2.5 m in front
-    /// at eye height, sized from the aspect (never hardcoded). V is flipped so a
-    /// GL (bottom-left origin) render target reads upright when sampled by Metal
-    /// (top-left origin). Layout per vertex: packed_float3 pos + packed_float2 uv.
-    private func gameQuadVertices(aspect: Float) -> [Float] {
-        let halfHeight: Float = 0.75          // 1.5 m tall
-        let halfWidth = halfHeight * aspect
+    /// Build the world-anchored quad vertices (triangle strip: BL, BR, TL, TR) at
+    /// `distance` m in front, from explicit half-width/half-height (WORLD space).
+    /// V is flipped so a GL (bottom-left origin) render target reads upright when
+    /// sampled by Metal (top-left origin). Layout: packed_float3 pos + float2 uv.
+    private func gameQuadVertices(halfWidth: Float, halfHeight: Float, distance: Float,
+                                  uvFlipX: Bool = false) -> [Float] {
         // World-anchored: 1.15 m above the floor origin (eye height in the room).
         // Head-locked (head tracking on): the origin IS the head, so centre at
         // eye level (cy = 0), otherwise the screen sits 1.15 m above the eyes.
         let cx: Float = 0.0
         let cy: Float = vcHeadTrackingMode != 0 ? 0.0 : 1.15
-        let cz: Float = -2.5
+        let cz: Float = -distance
+        let ux0: Float = uvFlipX ? 1.0 : 0.0   // uv.x at the left edge
+        let ux1: Float = uvFlipX ? 0.0 : 1.0   // uv.x at the right edge
         return [
-            cx - halfWidth, cy - halfHeight, cz,  0.0, 0.0,   // bottom-left
-            cx + halfWidth, cy - halfHeight, cz,  1.0, 0.0,   // bottom-right
-            cx - halfWidth, cy + halfHeight, cz,  0.0, 1.0,   // top-left
-            cx + halfWidth, cy + halfHeight, cz,  1.0, 1.0,   // top-right
+            cx - halfWidth, cy - halfHeight, cz,  ux0, 0.0,   // bottom-left
+            cx + halfWidth, cy - halfHeight, cz,  ux1, 0.0,   // bottom-right
+            cx - halfWidth, cy + halfHeight, cz,  ux0, 1.0,   // top-left
+            cx + halfWidth, cy + halfHeight, cz,  ux1, 1.0,   // top-right
         ]
     }
 
@@ -663,17 +688,38 @@ actor Renderer {
                 print("[vc-quad] game texture \(t.width)x\(t.height) type=\(t.textureType.rawValue) arrayLen=\(t.arrayLength) eye_count=\(ready.eye_count) pixelFormat=\(t.pixelFormat.rawValue) sameDeviceAsHost=\(t.device.registryID == device.registryID)")
             }
 
-            // Both modes draw the same world-anchored quad geometry (rebuilt when
-            // the aspect changes): cinema samples it as a 2D texture, stereo samples
-            // it per eye as an array slice so the two eyes CONVERGE on this screen.
+            // Quad geometry, rebuilt when the texture aspect changes. Cinema: 2.5 m
+            // world screen (2D texture), sized from the aspect. Stereo: pushed to
+            // vcCanvasDepth (plane adds no disparity -> depth from slice content) AND
+            // sized to the TRUE render tangents so it fills exactly the field of view
+            // the slice was drawn with -- full sight, not a window. The slice uses the
+            // compositor FOV scale p0/p5 = computeProjection[0][0]/[1][1], so the quad
+            // half-extents are D/p0 x D/p5. p0/p5 are ~equal per eye (only the
+            // off-centre term differs), so eye 0 is representative.
             let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
-            if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
-                let verts = gameQuadVertices(aspect: aspect)
-                gameQuadVertexBuffer = verts.withUnsafeBytes {
-                    device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+            if ready.eye_count >= 2 {
+                if stereoScreenVertexBuffer == nil || stereoScreenAspect != aspect {
+                    let proj = drawables.first?.computeProjection(viewIndex: 0) ?? matrix_identity_float4x4
+                    let p0 = proj.columns.0.x, p5 = proj.columns.1.y
+                    let hw = (p0 != 0) ? vcCanvasDepth / p0 : vcCanvasDepth
+                    let hh = (p5 != 0) ? vcCanvasDepth / p5 : vcCanvasDepth
+                    let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh, distance: vcCanvasDepth,
+                                                 uvFlipX: vcStereoUVFlip)
+                    stereoScreenVertexBuffer = verts.withUnsafeBytes {
+                        device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+                    }
+                    stereoScreenVertexBuffer?.label = "StereoScreenVertices"
+                    stereoScreenAspect = aspect
                 }
-                gameQuadVertexBuffer?.label = "GameQuadVertices"
-                gameQuadAspect = aspect
+            } else {
+                if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
+                    let verts = gameQuadVertices(halfWidth: 0.75 * aspect, halfHeight: 0.75, distance: 2.5)
+                    gameQuadVertexBuffer = verts.withUnsafeBytes {
+                        device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+                    }
+                    gameQuadVertexBuffer?.label = "GameQuadVertices"
+                    gameQuadAspect = aspect
+                }
             }
         }
 
@@ -788,18 +834,17 @@ actor Renderer {
         }
     }
 
-    /// CANVAS stereo (fallback): the game's 2D-array texture (slice 0 = left, 1 =
-    /// right) is shown on the SAME world-anchored quad as cinema, but each eye
-    /// samples its own slice. One per-eye view-projection makes both eyes CONVERGE
-    /// on the screen; the per-eye render disparity (baked into the slices) gives
-    /// the 3D -- but it reads like a flat 3D-cinema screen. amplification_id selects
-    /// the source slice and the view mapping routes it to drawable slice i, so eyes
-    /// are not swapped. The slice is symmetric (C side) and sampled with a uv.x flip
-    /// (ANGLE per-slice X-flip). For the immersive VR path see the OFFAXIS blit below.
+    /// Stereo: the game's 2D-array texture (slice 0 = left, 1 = right) on a world-
+    /// anchored quad at vcCanvasDepth, each eye sampling its own slice. One per-eye
+    /// view-projection makes both eyes converge on the screen; at a far distance the
+    /// quad plane adds ~no disparity of its own, so depth comes from the per-eye
+    /// slice content. amplification_id selects the source slice and the view mapping
+    /// routes it to drawable slice i, so eyes are not swapped. The slice is symmetric
+    /// (C side), sampled with a uv.x flip (ANGLE per-slice X-flip).
     private func encodeGameStereoScreen(drawables: [LayerRenderer.Drawable],
                                         commandBuffer: MTLCommandBuffer,
                                         texture: MTLTexture) {
-        guard let quadVertexBuffer = gameQuadVertexBuffer else { return }
+        guard let quadVertexBuffer = stereoScreenVertexBuffer else { return }
 
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()

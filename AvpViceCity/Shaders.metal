@@ -101,11 +101,10 @@ fragment float4 vc_stereo_fragment(VCStereoInOut in [[stage_in]],
                                    texture2d_array<float> tex [[texture(0)]])
 {
     constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
-    // uv.x MIRRORED: ANGLE's GL-render into a per-slice array EGLImage arrives
-    // horizontally flipped in the Metal texture (measured via slice probe). The
-    // cinema 2D path is not flipped, hence only the array path compensates here.
-    float2 uv = float2(1.0 - in.uv.x, in.uv.y);
-    float4 c = tex.sample(s, uv, in.eye);
+    // Sample uv straight. Any X mirror lives in the QUAD uv (VC_STEREO_UVFLIP on the
+    // Swift side), so it can be toggled: a uv.x flip here mirrored the whole stereo
+    // world -> inverted disparity (near objects double) + reversed controls.
+    float4 c = tex.sample(s, in.uv, in.eye);
     return float4(vc_srgb_to_linear(c.rgb), c.a);
 }
 
