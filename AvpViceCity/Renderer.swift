@@ -52,14 +52,13 @@ nonisolated let vcCanvasDepth: Float = {
     return 500.0
 }()
 
-// Mirror the stereo quad's uv.x. The earlier assumption that ANGLE's per-slice
-// array render arrives X-flipped is contradicted by the hard signals: with the
-// flip ON the stereo controls are reversed (both sticks) and disparity inverts
-// (near objects double) -- i.e. the whole stereo world is mirrored. Default OFF.
-// VC_STEREO_UVFLIP=1 restores the old (mirrored) behaviour for A/B.
-nonisolated let vcStereoUVFlip: Bool = {
-    ProcessInfo.processInfo.environment["VC_STEREO_UVFLIP"] == "1"
+// Stereo head-look (V_final = M_head · V_game). Default on. VC_STEREO_HEADLOOK=0
+// turns it off (screen head-locked, scene fixed) to A/B whether the head-driven
+// game camera is what makes every other frame's setup phase expensive (the 45 Hz).
+nonisolated let vcStereoHeadLook: Bool = {
+    ProcessInfo.processInfo.environment["VC_STEREO_HEADLOOK"] != "0"
 }()
+
 
 // The 90 Hz frame budget in milliseconds (1/90 s). Full-length bar == budget;
 // longer/red means over budget.
@@ -563,12 +562,16 @@ actor Renderer {
     }
 
     private func submitFrameToVCRenderer(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer) {
-        // Cinema head-tracking uses the mono compose seam. Stereo (CANVAS) does NOT:
-        // the head enters through the projected display quad (computeProjection·view
-        // per eye), so composing the mono head pose into the slice view too would
-        // double-count it. (Head LOOK inside the scene needs the direct-render path,
-        // not the projected-screen blit.)
-        if vcHeadTrackingMode != 0 && vc_render_mode() != VC_MODE_STEREO {
+        // Head pose -> game camera (V_final = M_head · V_game), the 5.4 seam. In
+        // STEREO this lets you look around IN the scene (composed into vcMainView for
+        // the main camera only; eye pass adds the IPD). VC_STEREO_HEADLOOK=0 disables
+        // it (screen stays head-locked, scene fixed) -- the A/B probe for whether the
+        // head-look is what makes every other frame's setup expensive (the 45 Hz).
+        if vc_render_mode() == VC_MODE_STEREO {
+            if vcStereoHeadLook {
+                pushHeadMatrices(drawable: drawable, yawOnly: false)
+            }
+        } else if vcHeadTrackingMode != 0 {
             pushHeadMatrices(drawable: drawable, yawOnly: vcHeadTrackingMode == 2)
         }
 
@@ -632,20 +635,15 @@ actor Renderer {
     /// V is flipped so a GL (bottom-left origin) render target reads upright when
     /// sampled by Metal (top-left origin). Layout: packed_float3 pos + float2 uv.
     private func gameQuadVertices(halfWidth: Float, halfHeight: Float, distance: Float,
-                                  uvFlipX: Bool = false) -> [Float] {
-        // World-anchored: 1.15 m above the floor origin (eye height in the room).
-        // Head-locked (head tracking on): the origin IS the head, so centre at
-        // eye level (cy = 0), otherwise the screen sits 1.15 m above the eyes.
+                                  centerY: Float) -> [Float] {
         let cx: Float = 0.0
-        let cy: Float = vcHeadTrackingMode != 0 ? 0.0 : 1.15
+        let cy: Float = centerY
         let cz: Float = -distance
-        let ux0: Float = uvFlipX ? 1.0 : 0.0   // uv.x at the left edge
-        let ux1: Float = uvFlipX ? 0.0 : 1.0   // uv.x at the right edge
         return [
-            cx - halfWidth, cy - halfHeight, cz,  ux0, 0.0,   // bottom-left
-            cx + halfWidth, cy - halfHeight, cz,  ux1, 0.0,   // bottom-right
-            cx - halfWidth, cy + halfHeight, cz,  ux0, 1.0,   // top-left
-            cx + halfWidth, cy + halfHeight, cz,  ux1, 1.0,   // top-right
+            cx - halfWidth, cy - halfHeight, cz,  0.0, 0.0,   // bottom-left
+            cx + halfWidth, cy - halfHeight, cz,  1.0, 0.0,   // bottom-right
+            cx - halfWidth, cy + halfHeight, cz,  0.0, 1.0,   // top-left
+            cx + halfWidth, cy + halfHeight, cz,  1.0, 1.0,   // top-right
         ]
     }
 
@@ -703,8 +701,12 @@ actor Renderer {
                     let p0 = proj.columns.0.x, p5 = proj.columns.1.y
                     let hw = (p0 != 0) ? vcCanvasDepth / p0 : vcCanvasDepth
                     let hh = (p5 != 0) ? vcCanvasDepth / p5 : vcCanvasDepth
-                    let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh, distance: vcCanvasDepth,
-                                                 uvFlipX: vcStereoUVFlip)
+                    // Head-locked (centre at eye level, cy=0): the stereo quad is
+                    // anchored in the deviceAnchor (render-pose) frame so it follows
+                    // the head and always fills the FOV, instead of standing in world
+                    // space and sliding out of view when you turn.
+                    let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh,
+                                                 distance: vcCanvasDepth, centerY: 0.0)
                     stereoScreenVertexBuffer = verts.withUnsafeBytes {
                         device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
                     }
@@ -713,7 +715,9 @@ actor Renderer {
                 }
             } else {
                 if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
-                    let verts = gameQuadVertices(halfWidth: 0.75 * aspect, halfHeight: 0.75, distance: 2.5)
+                    let cy: Float = vcHeadTrackingMode != 0 ? 0.0 : 1.15
+                    let verts = gameQuadVertices(halfWidth: 0.75 * aspect, halfHeight: 0.75,
+                                                 distance: 2.5, centerY: cy)
                     gameQuadVertexBuffer = verts.withUnsafeBytes {
                         device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
                     }
@@ -840,7 +844,8 @@ actor Renderer {
     /// quad plane adds ~no disparity of its own, so depth comes from the per-eye
     /// slice content. amplification_id selects the source slice and the view mapping
     /// routes it to drawable slice i, so eyes are not swapped. The slice is symmetric
-    /// (C side), sampled with a uv.x flip (ANGLE per-slice X-flip).
+    /// (C side), sampled WITHOUT a uv.x flip (a flip mirrored the world -> inverted
+    /// disparity + reversed controls).
     private func encodeGameStereoScreen(drawables: [LayerRenderer.Drawable],
                                         commandBuffer: MTLCommandBuffer,
                                         texture: MTLTexture) {
@@ -884,16 +889,18 @@ actor Renderer {
                 renderEncoder.setVertexAmplificationCount(viewports.count, viewMappings: &viewMappings)
             }
 
-            // Per-eye world -> clip, SAME derivation as the cinema quad, so both
-            // eyes converge on the world-anchored screen. Only the sampled slice
-            // differs per eye (in the fragment shader), which supplies the 3D.
-            let simdDeviceAnchor = drawable.deviceAnchor?.originFromAnchorTransform ?? matrix_identity_float4x4
+            // Per-eye clip. The stereo quad is ALWAYS head-locked: viewMatrix =
+            // view.transform.inverse (NO deviceAnchor), so the quad lives in the
+            // deviceAnchor/render-pose frame and follows the head -- it fills the FOV
+            // and doesn't slide away when you turn. The compositor still reprojects
+            // against the reported drawable.deviceAnchor, correcting head motion since
+            // render (Klepton/ALVR reprojection). The slice is a flat game image, so
+            // there is no in-scene look-around here -- that needs the game camera to
+            // follow the head, a separate step.
             var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
             for i in 0..<min(drawable.views.count, 2) {
                 let view = drawable.views[i]
-                let viewMatrix: simd_float4x4 = vcHeadTrackingMode != 0
-                    ? view.transform.inverse
-                    : (simdDeviceAnchor * view.transform).inverse
+                let viewMatrix = view.transform.inverse
                 let projectionMatrix = drawable.computeProjection(viewIndex: i)
                 viewProjection[i] = projectionMatrix * viewMatrix
             }
@@ -902,7 +909,26 @@ actor Renderer {
             if nowDraw - lastStereoDrawLogTime >= 1.0 {
                 lastStereoDrawLogTime = nowDraw
                 let ct = drawable.colorTextures[0]
-                print("[vc-quad] stereo DRAW (projected screen): views=\(drawable.views.count) colorArrayLen=\(ct.arrayLength) srcArrayLen=\(texture.arrayLength) headLock=\(vcHeadTrackingMode != 0)")
+                // Far-plane probe: project the quad CENTRE and a CORNER through eye 0
+                // and report NDC z = clip.z/clip.w. Metal is reverse-Z (near=1, far=0);
+                // the compositor discards NDC z < 0 (past the far plane). If the corner
+                // z is < 0 while the centre is > 0, the quad edges are being clipped ->
+                // that is the "window / too near" symptom. proj row2 = the compositor's
+                // own near/far encoding (columns.2.z, columns.3.z).
+                let proj = drawable.computeProjection(viewIndex: 0)
+                let p0 = proj.columns.0.x, p5 = proj.columns.1.y
+                let hw = (p0 != 0) ? vcCanvasDepth / p0 : vcCanvasDepth
+                let hh = (p5 != 0) ? vcCanvasDepth / p5 : vcCanvasDepth
+                let cyc: Float = 0.0   // stereo quad is head-locked at eye level
+                let centre = viewProjection[0] * SIMD4<Float>(0, cyc, -vcCanvasDepth, 1)
+                let corner = viewProjection[0] * SIMD4<Float>(hw, cyc + hh, -vcCanvasDepth, 1)
+                let cz = centre.w != 0 ? centre.z / centre.w : .nan
+                let kz = corner.w != 0 ? corner.z / corner.w : .nan
+                print(String(format: "[vc-far] depth=%.0f  proj row2 z=%.5f w=%.3f  centre ndcZ=%.5f (w=%.2f)  corner ndcZ=%.5f (w=%.2f)  cornerDist=%.0f  colorArrayLen=%d srcArrayLen=%d",
+                             vcCanvasDepth, proj.columns.2.z, proj.columns.3.z,
+                             cz, centre.w, kz, corner.w,
+                             (hw*hw + hh*hh + vcCanvasDepth*vcCanvasDepth).squareRoot(),
+                             ct.arrayLength, texture.arrayLength))
             }
 
             renderEncoder.setVertexBuffer(quadVertexBuffer, offset: 0, index: 0)

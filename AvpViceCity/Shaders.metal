@@ -101,9 +101,9 @@ fragment float4 vc_stereo_fragment(VCStereoInOut in [[stage_in]],
                                    texture2d_array<float> tex [[texture(0)]])
 {
     constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
-    // Sample uv straight. Any X mirror lives in the QUAD uv (VC_STEREO_UVFLIP on the
-    // Swift side), so it can be toggled: a uv.x flip here mirrored the whole stereo
-    // world -> inverted disparity (near objects double) + reversed controls.
+    // Sample uv straight -- NO uv.x flip. The earlier "ANGLE per-slice array X-flip"
+    // assumption was wrong: a uv.x flip mirrored the whole stereo world -> inverted
+    // disparity (near objects double) + reversed controls (proven on device, A/B).
     float4 c = tex.sample(s, in.uv, in.eye);
     return float4(vc_srgb_to_linear(c.rgb), c.a);
 }

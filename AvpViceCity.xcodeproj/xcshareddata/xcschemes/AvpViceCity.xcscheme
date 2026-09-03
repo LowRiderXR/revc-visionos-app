@@ -143,9 +143,19 @@
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
-            key = "VC_STEREO_UVFLIP"
+            key = "VC_STEREO_HEADLOOK"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_NUM_BUFFERS"
+            value = "4"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_FRAME_CAP_HZ"
+            value = "90"
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
