@@ -59,6 +59,33 @@ nonisolated let vcStereoHeadLook: Bool = {
     ProcessInfo.processInfo.environment["VC_STEREO_HEADLOOK"] != "0"
 }()
 
+// Stereo HUD layer (Phase 5.6, approach B). The 2D/HUD/menu overlay is rendered by
+// reVC into a SEPARATE transparent buffer (hud_texture) and drawn here as its own
+// HEAD-LOCKED quad over the world slices. Unlike the world (pushed far so its baked
+// disparity dominates), the HUD is a flat 2D image, so it sits at a comfortable
+// reading distance with normal convergence. VC_HUD_DEPTH = metres from the head
+// (default 1.8). VC_HUD_SIZE = fraction of the vertical FOV the quad fills at that
+// depth (default 1.0 = full FOV, i.e. same coverage as the flat screen); shrink it
+// to pull the corners (radar, cash) into comfortable central view.
+nonisolated let vcHudDepth: Float = {
+    if let s = ProcessInfo.processInfo.environment["VC_HUD_DEPTH"], let d = Float(s), d > 0 {
+        return d
+    }
+    return 1.8
+}()
+nonisolated let vcHudSize: Float = {
+    if let s = ProcessInfo.processInfo.environment["VC_HUD_SIZE"], let d = Float(s), d > 0 {
+        return d
+    }
+    return 1.0
+}()
+// Draw the stereo HUD overlay at all. Default on. VC_HUD=0 disables it, to A/B
+// whether a black screen is the HUD layer covering the world (overlay opaque) vs a
+// break in the world path itself.
+nonisolated let vcHudEnabled: Bool = {
+    ProcessInfo.processInfo.environment["VC_HUD"] != "0"
+}()
+
 
 // The 90 Hz frame budget in milliseconds (1/90 s). Full-length bar == budget;
 // longer/red means over budget.
@@ -118,6 +145,9 @@ actor Renderer {
     let gameStereoPipeline: MTLRenderPipelineState
     // Same, with the test-fill fragment (VC_STEREO_TESTFILL).
     let gameStereoTestPipeline: MTLRenderPipelineState
+    // Stereo HUD layer: the transparent 2D overlay on a head-locked quad, blended
+    // over the world slices (premultiplied alpha). Reuses the cinema quad shaders.
+    let gameHudPipeline: MTLRenderPipelineState
     // Depth-disabled state for the full-screen stereo blit (always fills).
     let noDepthState: MTLDepthStencilState
     var gameSharedEvent: MTLSharedEvent?   // id<MTLSharedEvent> from the game side (lazy)
@@ -125,6 +155,9 @@ actor Renderer {
     var gameQuadAspect: Float = 0          // width/height the cinema vertex buffer was built for
     var stereoScreenVertexBuffer: MTLBuffer?  // stereo quad (far distance), rebuilt on aspect change
     var stereoScreenAspect: Float = 0         // width/height the stereo vertex buffer was built for
+    var hudQuadVertexBuffer: MTLBuffer?       // head-locked HUD quad, rebuilt on aspect change
+    var hudQuadAspect: Float = 0              // width/height the HUD vertex buffer was built for
+    var didLogHudDisplay = false
     var didLogColorFormat = false
     // Log the texture description once PER eye_count, not globally: otherwise the
     // first mono (menu) frame permanently swallows the stereo description.
@@ -135,6 +168,7 @@ actor Renderer {
     // Last acquired game frame, held so a failed acquire re-shows it instead of
     // going black. The held buffer is never scheduled for release while current.
     var heldTexture: MTLTexture?
+    var heldHudTexture: MTLTexture?        // stereo HUD overlay for the held frame (nil in cinema)
     var heldIndex: UInt32 = 0
     var heldWaitValue: UInt64 = 0
     var hasHeldFrame = false
@@ -192,6 +226,7 @@ actor Renderer {
             gameStereoTestPipeline = try Self.buildGameStereoPipeline(device: device, layerRenderer: layerRenderer,
                                                                       vertex: "vc_stereo_vertex",
                                                                       fragment: "vc_stereo_fragment_testfill")
+            gameHudPipeline = try Self.buildHudPipeline(device: device, layerRenderer: layerRenderer)
             statsBarPipeline = try Self.buildStatsBarPipeline(device: device, layerRenderer: layerRenderer)
         } catch {
             fatalError("Unable to compile game-quad/stereo/stats pipeline state. Error info: \(error)")
@@ -252,6 +287,35 @@ actor Renderer {
         pipelineDescriptor.fragmentFunction = library?.makeFunction(name: fragment)
         pipelineDescriptor.rasterSampleCount = 1
         pipelineDescriptor.colorAttachments[0].pixelFormat = layerRenderer.configuration.colorFormat
+        pipelineDescriptor.depthAttachmentPixelFormat = layerRenderer.configuration.depthFormat
+        pipelineDescriptor.maxVertexAmplificationCount = layerRenderer.properties.viewCount
+        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    }
+
+    // HUD-overlay pipeline: the cinema quad shaders (2D texture) with ALPHA BLENDING
+    // enabled, so the transparent HUD buffer composites over the world slices. The
+    // HUD buffer is accumulated by reVC's 2D pass (src-over into a zero-cleared
+    // buffer), so its stored colour is already PREMULTIPLIED by coverage -> composite
+    // with premultiplied "over" (srcRGB factor = 1, dstRGB factor = 1 - srcAlpha).
+    // Partial-alpha edges are slightly off (reVC blends alpha with SRC_ALPHA, not
+    // ONE, so accumulated coverage is a touch low) but opaque HUD is exact.
+    static func buildHudPipeline(device: MTLDevice,
+                                 layerRenderer: LayerRenderer) throws -> MTLRenderPipelineState {
+        let library = device.makeDefaultLibrary()
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.label = "GameHudPipeline"
+        pipelineDescriptor.vertexFunction = library?.makeFunction(name: "vc_quad_vertex")
+        pipelineDescriptor.fragmentFunction = library?.makeFunction(name: "vc_quad_fragment")
+        pipelineDescriptor.rasterSampleCount = 1
+        let ca = pipelineDescriptor.colorAttachments[0]!
+        ca.pixelFormat = layerRenderer.configuration.colorFormat
+        ca.isBlendingEnabled = true
+        ca.rgbBlendOperation = .add
+        ca.alphaBlendOperation = .add
+        ca.sourceRGBBlendFactor = .one                     // premultiplied colour
+        ca.sourceAlphaBlendFactor = .one
+        ca.destinationRGBBlendFactor = .oneMinusSourceAlpha
+        ca.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         pipelineDescriptor.depthAttachmentPixelFormat = layerRenderer.configuration.depthFormat
         pipelineDescriptor.maxVertexAmplificationCount = layerRenderer.properties.viewCount
         return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
@@ -676,6 +740,10 @@ actor Renderer {
             }
 
             heldTexture = Unmanaged<AnyObject>.fromOpaque(texPtr).takeUnretainedValue() as? MTLTexture
+            // Stereo also hands over the transparent HUD overlay (same index/fence).
+            heldHudTexture = ready.hud_texture.map {
+                Unmanaged<AnyObject>.fromOpaque($0).takeUnretainedValue() as! MTLTexture
+            }
             heldIndex = ready.index
             heldWaitValue = ready.wait_value
             heldEyeCount = ready.eye_count   // the C side decides mono (1) vs stereo (2)
@@ -712,6 +780,25 @@ actor Renderer {
                     }
                     stereoScreenVertexBuffer?.label = "StereoScreenVertices"
                     stereoScreenAspect = aspect
+                }
+                // HUD quad (approach B): head-locked, at vcHudDepth, sized to a
+                // fraction (vcHudSize) of the vertical FOV at that depth, keeping the
+                // HUD texture's own aspect so it isn't stretched. Rebuilt on aspect
+                // change. Separate from the world quad: the HUD is a flat 2D image, so
+                // it belongs at a comfortable reading depth, not pushed to infinity.
+                if hudQuadVertexBuffer == nil || hudQuadAspect != aspect {
+                    let proj = drawables.first?.computeProjection(viewIndex: 0) ?? matrix_identity_float4x4
+                    let p5 = proj.columns.1.y
+                    let fullHalfH = (p5 != 0) ? vcHudDepth / p5 : vcHudDepth
+                    let hh = vcHudSize * fullHalfH
+                    let hw = hh * aspect
+                    let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh,
+                                                 distance: vcHudDepth, centerY: 0.0)
+                    hudQuadVertexBuffer = verts.withUnsafeBytes {
+                        device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+                    }
+                    hudQuadVertexBuffer?.label = "HudQuadVertices"
+                    hudQuadAspect = aspect
                 }
             } else {
                 if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
@@ -767,6 +854,10 @@ actor Renderer {
                 print("[vc-quad] stereo display path ACTIVE (projected screen, slice per eye)\(vcStereoTestFill ? " [TESTFILL: eye0=red eye1=green]" : "")")
             }
             encodeGameStereoScreen(drawables: drawables, commandBuffer: commandBuffer, texture: gameTexture)
+            // Then the HUD/2D/menu overlay as a head-locked layer on top of the world.
+            if vcHudEnabled, let hud = heldHudTexture {
+                encodeGameHud(drawables: drawables, commandBuffer: commandBuffer, texture: hud)
+            }
             return
         }
 
@@ -929,6 +1020,81 @@ actor Renderer {
                              cz, centre.w, kz, corner.w,
                              (hw*hw + hh*hh + vcCanvasDepth*vcCanvasDepth).squareRoot(),
                              ct.arrayLength, texture.arrayLength))
+            }
+
+            renderEncoder.setVertexBuffer(quadVertexBuffer, offset: 0, index: 0)
+            renderEncoder.setVertexBytes(&viewProjection,
+                                         length: MemoryLayout<matrix_float4x4>.stride * 2,
+                                         index: 1)
+            renderEncoder.setFragmentTexture(texture, index: 0)
+            renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            renderEncoder.endEncoding()
+        }
+    }
+
+    /// Stereo HUD layer (approach B). The transparent 2D overlay (a plain 2D texture,
+    /// reVC's SCREEN_WIDTH x SCREEN_HEIGHT HUD/2D/menu buffer) drawn as a HEAD-LOCKED
+    /// quad ON TOP of the world slices, one per-eye view-projection. Same 2D-texture
+    /// shaders as the cinema quad but through the alpha-blending HUD pipeline, so the
+    /// transparent background lets the world show through. Loads (does not clear) the
+    /// colour the world pass just wrote; depth is ignored (no test / no write) since
+    /// the HUD always sits on top. Head-locked: viewMatrix = view.transform.inverse
+    /// (no deviceAnchor), so the HUD follows the head; the compositor still reprojects
+    /// against the reported deviceAnchor.
+    private func encodeGameHud(drawables: [LayerRenderer.Drawable],
+                               commandBuffer: MTLCommandBuffer,
+                               texture: MTLTexture) {
+        guard let quadVertexBuffer = hudQuadVertexBuffer else { return }
+
+        if !didLogHudDisplay {
+            didLogHudDisplay = true
+            print("[vc-quad] HUD layer ACTIVE (head-locked overlay, depth=\(vcHudDepth) size=\(vcHudSize)) tex=\(texture.width)x\(texture.height) type=\(texture.textureType.rawValue)")
+        }
+
+        for drawable in drawables {
+            let renderPassDescriptor = MTLRenderPassDescriptor()
+            renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
+            renderPassDescriptor.colorAttachments[0].loadAction = .load
+            renderPassDescriptor.colorAttachments[0].storeAction = .store
+            renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
+            renderPassDescriptor.depthAttachment.loadAction = .load
+            renderPassDescriptor.depthAttachment.storeAction = .store
+            renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
+            if layerRenderer.configuration.layout == .layered {
+                renderPassDescriptor.renderTargetArrayLength = drawable.views.count
+            }
+
+            #if !targetEnvironment(simulator)
+            let residencySet = self.residencySets[uniformBufferIndex]
+            residencySet.addAllocations([texture, quadVertexBuffer])
+            residencySet.commit()
+            #endif
+
+            guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+                return
+            }
+            renderEncoder.label = "Game HUD Overlay"
+            renderEncoder.setCullMode(.none)
+            renderEncoder.setRenderPipelineState(gameHudPipeline)
+            renderEncoder.setDepthStencilState(noDepthState)   // always on top, no depth write
+
+            let viewports = drawable.views.map { $0.textureMap.viewport }
+            renderEncoder.setViewports(viewports)
+
+            if drawable.views.count > 1 {
+                var viewMappings = (0..<drawable.views.count).map {
+                    MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: UInt32($0),
+                                                      renderTargetArrayIndexOffset: UInt32($0))
+                }
+                renderEncoder.setVertexAmplificationCount(viewports.count, viewMappings: &viewMappings)
+            }
+
+            var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
+            for i in 0..<min(drawable.views.count, 2) {
+                let view = drawable.views[i]
+                let viewMatrix = view.transform.inverse   // head-locked
+                let projectionMatrix = drawable.computeProjection(viewIndex: i)
+                viewProjection[i] = projectionMatrix * viewMatrix
             }
 
             renderEncoder.setVertexBuffer(quadVertexBuffer, offset: 0, index: 0)

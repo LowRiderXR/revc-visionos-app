@@ -77,6 +77,9 @@ typedef struct vc_ready_frame_t {
     uint64_t wait_value;   ///< shared-event value to wait for (0 = no wait)
     uint32_t width, height;///< per-slice dimensions
     uint32_t eye_count;    ///< 1 = mono (sample the 2D texture); 2 = stereo (array slice per eye)
+    void    *hud_texture;  ///< stereo only: id<MTLTexture>, 2D, the transparent HUD/2D/menu
+                           ///<   overlay (SCREEN_WIDTH x SCREEN_HEIGHT), to be drawn as a
+                           ///<   head-locked quad over the world slices. NULL in cinema.
 } vc_ready_frame_t;
 
 /// Non-blocking. Fills `out` with the most recently finished buffer and returns
