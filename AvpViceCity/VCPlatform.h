@@ -134,6 +134,12 @@ typedef enum vc_render_mode_t {
 /// The active (effective) render mode. Readable from both reVC and Swift.
 vc_render_mode_t vc_render_mode(void);
 
+/// 1 while the in-game pause menu is up (FrontEndMenuManager.m_bMenuActive), else 0.
+/// In stereo the whole in-game render block (world + HUD) is skipped while this is
+/// set, so the overlay buffer holds ONLY the menu: the host switches the single
+/// overlay quad from head-locked (HUD) to world-anchored (menu) on this flag.
+int vc_menu_active(void);
+
 // ---------------------------------------------------------------------------
 // Camera matrix override (stereo injection point). When the override is active,
 // reVC's gl3device beginUpdate uploads THESE matrices to the shader uniforms

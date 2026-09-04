@@ -86,6 +86,25 @@ nonisolated let vcHudEnabled: Bool = {
     ProcessInfo.processInfo.environment["VC_HUD"] != "0"
 }()
 
+// In-game menu panel (stereo). While the pause menu is up, the SAME overlay buffer
+// holds only the menu (the in-game block incl. HUD is skipped game-side), so we draw
+// it on a WORLD-ANCHORED quad frozen at the head pose captured when the menu opened
+// -- it appears in front of you and stays put like a screen in the room. VC_MENU_DEPTH
+// = metres from that frozen pose (default 2.0). VC_MENU_SIZE = fraction of the vertical
+// FOV the panel fills at that depth when it opens (default 1.0).
+nonisolated let vcMenuDepth: Float = {
+    if let s = ProcessInfo.processInfo.environment["VC_MENU_DEPTH"], let d = Float(s), d > 0 {
+        return d
+    }
+    return 2.0
+}()
+nonisolated let vcMenuSize: Float = {
+    if let s = ProcessInfo.processInfo.environment["VC_MENU_SIZE"], let d = Float(s), d > 0 {
+        return d
+    }
+    return 1.0
+}()
+
 
 // The 90 Hz frame budget in milliseconds (1/90 s). Full-length bar == budget;
 // longer/red means over budget.
@@ -157,7 +176,8 @@ actor Renderer {
     var stereoScreenAspect: Float = 0         // width/height the stereo vertex buffer was built for
     var hudQuadVertexBuffer: MTLBuffer?       // head-locked HUD quad, rebuilt on aspect change
     var hudQuadAspect: Float = 0              // width/height the HUD vertex buffer was built for
-    var didLogHudDisplay = false
+    var menuQuadVertexBuffer: MTLBuffer?      // head-locked menu panel quad (own depth/size)
+    var menuQuadAspect: Float = 0
     var didLogColorFormat = false
     // Log the texture description once PER eye_count, not globally: otherwise the
     // first mono (menu) frame permanently swallows the stereo description.
@@ -169,6 +189,7 @@ actor Renderer {
     // going black. The held buffer is never scheduled for release while current.
     var heldTexture: MTLTexture?
     var heldHudTexture: MTLTexture?        // stereo HUD overlay for the held frame (nil in cinema)
+    var frozenWorldTexture: MTLTexture?    // world slices frozen at menu-open (paused = no eye passes)
     var heldIndex: UInt32 = 0
     var heldWaitValue: UInt64 = 0
     var hasHeldFrame = false
@@ -800,6 +821,22 @@ actor Renderer {
                     hudQuadVertexBuffer?.label = "HudQuadVertices"
                     hudQuadAspect = aspect
                 }
+                // Menu panel quad: same construction but at vcMenuDepth / vcMenuSize.
+                // Drawn world-anchored (frozen pose) while the pause menu is up.
+                if menuQuadVertexBuffer == nil || menuQuadAspect != aspect {
+                    let proj = drawables.first?.computeProjection(viewIndex: 0) ?? matrix_identity_float4x4
+                    let p5 = proj.columns.1.y
+                    let fullHalfH = (p5 != 0) ? vcMenuDepth / p5 : vcMenuDepth
+                    let hh = vcMenuSize * fullHalfH
+                    let hw = hh * aspect
+                    let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh,
+                                                 distance: vcMenuDepth, centerY: 0.0)
+                    menuQuadVertexBuffer = verts.withUnsafeBytes {
+                        device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+                    }
+                    menuQuadVertexBuffer?.label = "MenuQuadVertices"
+                    menuQuadAspect = aspect
+                }
             } else {
                 if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
                     let cy: Float = vcHeadTrackingMode != 0 ? 0.0 : 1.15
@@ -816,14 +853,7 @@ actor Renderer {
 
         // Nothing to show until the first-ever acquire; then always show the held
         // frame (fresh this frame, or re-shown on a failed acquire).
-        guard hasHeldFrame, let gameTexture = heldTexture else {
-            let now = CFAbsoluteTimeGetCurrent()
-            if now - lastPathLogTime >= 1.0 {
-                lastPathLogTime = now
-                print("[vc-quad] path: NO held frame yet (nothing drawn this frame)")
-            }
-            return
-        }
+        guard hasHeldFrame, let gameTexture = heldTexture else { return }
         let waitValue = heldWaitValue
 
         // Per-frame (throttled) which branch runs and on what texture -- proves
@@ -853,8 +883,20 @@ actor Renderer {
                 didLogStereoDisplay = true
                 print("[vc-quad] stereo display path ACTIVE (projected screen, slice per eye)\(vcStereoTestFill ? " [TESTFILL: eye0=red eye1=green]" : "")")
             }
-            encodeGameStereoScreen(drawables: drawables, commandBuffer: commandBuffer, texture: gameTexture)
-            // Then the HUD/2D/menu overlay as a head-locked layer on top of the world.
+            // Pause menu: game-side the whole in-game block (incl. eye passes) is skipped
+            // while the menu is up, so the 4 buffers hold DIFFERENT stale world frames and
+            // cycling them per acquire makes the frozen world JITTER. Fix: pin ONE frame
+            // (the one held when the menu opened) for the whole pause; keep the menu
+            // overlay live. Everything stays HEAD-LOCKED (menu + world are flat quads on
+            // the same plane -- world-anchoring them only caused alignment issues, no gain).
+            let menuActive = vc_menu_active() != 0
+            if menuActive {
+                if frozenWorldTexture == nil { frozenWorldTexture = gameTexture }
+            } else {
+                frozenWorldTexture = nil
+            }
+            let worldTexture = menuActive ? (frozenWorldTexture ?? gameTexture) : gameTexture
+            encodeGameStereoScreen(drawables: drawables, commandBuffer: commandBuffer, texture: worldTexture)
             if vcHudEnabled, let hud = heldHudTexture {
                 encodeGameHud(drawables: drawables, commandBuffer: commandBuffer, texture: hud)
             }
@@ -991,7 +1033,7 @@ actor Renderer {
             var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
             for i in 0..<min(drawable.views.count, 2) {
                 let view = drawable.views[i]
-                let viewMatrix = view.transform.inverse
+                let viewMatrix = view.transform.inverse   // head-locked
                 let projectionMatrix = drawable.computeProjection(viewIndex: i)
                 viewProjection[i] = projectionMatrix * viewMatrix
             }
@@ -1032,24 +1074,20 @@ actor Renderer {
         }
     }
 
-    /// Stereo HUD layer (approach B). The transparent 2D overlay (a plain 2D texture,
-    /// reVC's SCREEN_WIDTH x SCREEN_HEIGHT HUD/2D/menu buffer) drawn as a HEAD-LOCKED
-    /// quad ON TOP of the world slices, one per-eye view-projection. Same 2D-texture
-    /// shaders as the cinema quad but through the alpha-blending HUD pipeline, so the
-    /// transparent background lets the world show through. Loads (does not clear) the
-    /// colour the world pass just wrote; depth is ignored (no test / no write) since
-    /// the HUD always sits on top. Head-locked: viewMatrix = view.transform.inverse
-    /// (no deviceAnchor), so the HUD follows the head; the compositor still reprojects
-    /// against the reported deviceAnchor.
+    /// Stereo overlay layer (approach B). The 2D overlay buffer (reVC's SCREEN x SCREEN
+    /// HUD/2D/menu buffer) drawn ON TOP of the world slices, one per-eye view-projection,
+    /// through the alpha-blending HUD pipeline. The in-game block (world + HUD) is
+    /// skipped game-side while the pause menu is up, so this ONE buffer holds either the
+    /// HUD (menu off) or the menu (menu on), both drawn HEAD-LOCKED (view.transform.inverse)
+    /// -- they are flat quads on the same plane; the menu just uses its own depth/size
+    /// (vcMenuDepth/vcMenuSize) so it can be larger than the HUD. Depth ignored (always on
+    /// top). The compositor still reprojects against the reported deviceAnchor.
     private func encodeGameHud(drawables: [LayerRenderer.Drawable],
                                commandBuffer: MTLCommandBuffer,
                                texture: MTLTexture) {
-        guard let quadVertexBuffer = hudQuadVertexBuffer else { return }
+        let menuActive = vc_menu_active() != 0
 
-        if !didLogHudDisplay {
-            didLogHudDisplay = true
-            print("[vc-quad] HUD layer ACTIVE (head-locked overlay, depth=\(vcHudDepth) size=\(vcHudSize)) tex=\(texture.width)x\(texture.height) type=\(texture.textureType.rawValue)")
-        }
+        guard let quadVertexBuffer = menuActive ? menuQuadVertexBuffer : hudQuadVertexBuffer else { return }
 
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()
@@ -1073,7 +1111,7 @@ actor Renderer {
             guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
                 return
             }
-            renderEncoder.label = "Game HUD Overlay"
+            renderEncoder.label = menuActive ? "Game Menu Panel" : "Game HUD Overlay"
             renderEncoder.setCullMode(.none)
             renderEncoder.setRenderPipelineState(gameHudPipeline)
             renderEncoder.setDepthStencilState(noDepthState)   // always on top, no depth write
@@ -1092,7 +1130,7 @@ actor Renderer {
             var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
             for i in 0..<min(drawable.views.count, 2) {
                 let view = drawable.views[i]
-                let viewMatrix = view.transform.inverse   // head-locked
+                let viewMatrix = view.transform.inverse   // head-locked (HUD and menu)
                 let projectionMatrix = drawable.computeProjection(viewIndex: i)
                 viewProjection[i] = projectionMatrix * viewMatrix
             }
