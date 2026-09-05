@@ -59,6 +59,14 @@ nonisolated let vcStereoHeadLook: Bool = {
     ProcessInfo.processInfo.environment["VC_STEREO_HEADLOOK"] != "0"
 }()
 
+// Reproject-from-render-pose fix: report drawable.deviceAnchor as the pose the displayed
+// slice was RENDERED with (matched via pose_set_time), not the current pose, so the
+// compositor reprojects the flat slice from its true render pose -> kills the head-turn
+// double image. Default on; VC_REPROJ_FIX=0 to A/B against the old (current-pose) behaviour.
+nonisolated let vcReprojFix: Bool = {
+    ProcessInfo.processInfo.environment["VC_REPROJ_FIX"] != "0"
+}()
+
 // Stereo HUD layer (Phase 5.6, approach B). The 2D/HUD/menu overlay is rendered by
 // reVC into a SEPARATE transparent buffer (hud_texture) and drawn here as its own
 // HEAD-LOCKED quad over the world slices. Unlike the world (pushed far so its baked
@@ -195,6 +203,23 @@ actor Renderer {
     var hasHeldFrame = false
     var heldEyeCount: UInt32 = 1           // 1 = mono/cinema, 2 = stereo array; drives the display path
     var didLogStereoDisplay = false
+
+    // [vc-repro] probe: head yaw rate. The content is rendered with the pose pushed at
+    // submit, buffered, then displayed while deviceAnchor is reported as the CURRENT pose;
+    // the compositor reprojects by that difference = yawRate * pipeline-latency. This logs
+    // the rate so the mismatch angle can be read off (rate * ~11-22 ms from [vc-pose-jitter]).
+    var probeLastYaw: Float? = nil
+    var probeLastYawT: Double = 0
+    var probeMaxRate: Float = 0
+    var probeLastLogT: Double = 0
+
+    // Render-pose reprojection fix: ring of the DeviceAnchor each head pose was pushed
+    // with, keyed by vc_last_pushed_pose_time(). The displayed buffer carries
+    // pose_set_time; we look up its anchor A and report it as drawable.deviceAnchor so the
+    // compositor reprojects from A (survives 4-deep buffering + recycling: the key rides
+    // the buffer through publish/acquire). heldRenderAnchor persists across re-shows.
+    var renderAnchorRing: [(key: UInt64, anchor: DeviceAnchor)] = []
+    var heldRenderAnchor: DeviceAnchor?
     var lastPathLogTime: Double = 0        // throttles the per-frame path/branch diagnostic
     var lastStereoDrawLogTime: Double = 0  // throttles the "stereo drew this frame" diagnostic
     var lastPresentLogTime: Double = 0     // throttles the present/empty-path anchor diagnostic
@@ -516,6 +541,15 @@ actor Renderer {
             lastPresentLogTime = nowPresent
             print("[vc-quad] present: NORMAL path, drawables=\(drawables.count) anchor0set=\(drawables[0].deviceAnchor != nil) heldEyeCount=\(heldEyeCount)")
         }
+        // Reprojection fix: report the pose the DISPLAYED slice was actually rendered
+        // with (A), so the compositor reprojects from A -> current head instead of from
+        // the current pose B (which left the slice at its stale render orientation = the
+        // head-turn double). Stereo only; the quad is head-locked, so only the REPORTED
+        // anchor changes, not the draw. Until the first render pose is known, keep B.
+        if vcReprojFix, vc_render_mode() == VC_MODE_STEREO, let a = heldRenderAnchor {
+            for drawable in drawables { drawable.deviceAnchor = a }
+        }
+
         for drawable in drawables {
             drawable.encodePresent(commandBuffer: commandBuffer)
         }
@@ -644,6 +678,15 @@ actor Renderer {
         vc_set_projection_matrix(flat(pOut))
         vc_set_view_compose(1)
         vc_set_matrix_override(1)
+
+        // Reprojection fix: remember the DeviceAnchor this exact push used, keyed by the
+        // same g_ovSetTime that rides back on the rendered buffer as pose_set_time.
+        if vcReprojFix, let a = drawable.deviceAnchor {
+            renderAnchorRing.append((key: vc_last_pushed_pose_time(), anchor: a))
+            if renderAnchorRing.count > 16 {
+                renderAnchorRing.removeFirst(renderAnchorRing.count - 16)
+            }
+        }
     }
 
     private func submitFrameToVCRenderer(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer) {
@@ -661,6 +704,35 @@ actor Renderer {
         }
 
         let simdDeviceAnchor = drawable.deviceAnchor?.originFromAnchorTransform ?? matrix_identity_float4x4
+
+        // [vc-repro] head yaw rate: the render pose (A, pushed here, then buffered) vs the
+        // reported deviceAnchor (B, current at display) differ by yawRate * pipeline-latency
+        // -> the compositor reprojects the flat slice by that angle = the head-turn double
+        // image. Zero when the head is still (matches: stick/driving never doubles). Peak
+        // over 1 s so a brief fast turn is visible. VC_PERF_LOG only.
+        if vc_render_mode() == VC_MODE_STEREO && vc_perf_log() != 0 {
+            let fwd = -SIMD3<Float>(simdDeviceAnchor.columns.2.x, simdDeviceAnchor.columns.2.y, simdDeviceAnchor.columns.2.z)
+            let yaw = atan2(-fwd.x, -fwd.z)
+            let t = drawable.frameTiming.presentationTime.timeInterval
+            if let prev = probeLastYaw, probeLastYawT > 0 {
+                let dt = t - probeLastYawT
+                if dt > 0.0001 {
+                    var d = yaw - prev
+                    if d > .pi { d -= 2 * .pi } else if d < -.pi { d += 2 * .pi }
+                    let rate = abs(d) / Float(dt) * 180.0 / .pi   // deg/s
+                    if rate > probeMaxRate { probeMaxRate = rate }
+                }
+            }
+            probeLastYaw = yaw
+            probeLastYawT = t
+            if probeLastLogT == 0 { probeLastLogT = t }
+            if t - probeLastLogT >= 1.0 {
+                probeLastLogT = t
+                let peakDegPerFrame = probeMaxRate / 90.0   // ~= mismatch at one 90 Hz frame of latency
+                print(String(format: "[vc-repro] head yaw PEAK rate = %.1f deg/s  (~%.2f deg per 90Hz frame of pipeline latency)", probeMaxRate, peakDegPerFrame))
+                probeMaxRate = 0
+            }
+        }
 
         func makeEye(_ viewIndex: Int) -> vc_eye_t {
             let view = drawable.views[viewIndex]
@@ -769,6 +841,18 @@ actor Renderer {
             heldWaitValue = ready.wait_value
             heldEyeCount = ready.eye_count   // the C side decides mono (1) vs stereo (2)
             hasHeldFrame = true
+
+            // Reprojection fix: the anchor this held frame was RENDERED with. Exact key
+            // match on pose_set_time; nearest as a safety net if the ring evicted it.
+            if vcReprojFix, ready.pose_set_time != 0 {
+                let t = ready.pose_set_time
+                if let hit = renderAnchorRing.last(where: { $0.key == t }) {
+                    heldRenderAnchor = hit.anchor
+                } else if let near = renderAnchorRing.min(by: {
+                    ($0.key > t ? $0.key - t : t - $0.key) < ($1.key > t ? $1.key - t : t - $1.key) }) {
+                    heldRenderAnchor = near.anchor
+                }
+            }
 
             if !loggedGameTexEyeCounts.contains(ready.eye_count), let t = heldTexture {
                 loggedGameTexEyeCounts.insert(ready.eye_count)

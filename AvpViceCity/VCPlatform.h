@@ -80,6 +80,11 @@ typedef struct vc_ready_frame_t {
     void    *hud_texture;  ///< stereo only: id<MTLTexture>, 2D, the transparent HUD/2D/menu
                            ///<   overlay (SCREEN_WIDTH x SCREEN_HEIGHT), to be drawn as a
                            ///<   head-locked quad over the world slices. NULL in cinema.
+    uint64_t pose_set_time;///< mach_absolute_time of the head pose reVC RENDERED this frame
+                           ///<   with (== vc_last_pushed_pose_time of that push). The host
+                           ///<   matches it to its DeviceAnchor ring and reports THAT anchor
+                           ///<   as drawable.deviceAnchor, so the compositor reprojects the
+                           ///<   slice from its true render pose (fixes the head-turn double).
 } vc_ready_frame_t;
 
 /// Non-blocking. Fills `out` with the most recently finished buffer and returns
@@ -139,6 +144,14 @@ vc_render_mode_t vc_render_mode(void);
 /// set, so the overlay buffer holds ONLY the menu: the host switches the single
 /// overlay quad from head-locked (HUD) to world-anchored (menu) on this flag.
 int vc_menu_active(void);
+
+/// 1 when verbose perf logging is enabled (env VC_PERF_LOG); gates host-side probes.
+int vc_perf_log(void);
+
+/// mach_absolute_time of the most recent head pose pushed via vc_set_view_matrix.
+/// The host reads this right after pushing so it can key its DeviceAnchor ring to the
+/// exact value that later arrives on a buffer as vc_ready_frame_t.pose_set_time.
+uint64_t vc_last_pushed_pose_time(void);
 
 // ---------------------------------------------------------------------------
 // Camera matrix override (stereo injection point). When the override is active,
