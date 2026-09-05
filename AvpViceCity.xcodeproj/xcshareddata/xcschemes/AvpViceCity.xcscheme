@@ -180,6 +180,11 @@
          <EnvironmentVariable
             key = "VC_STEREO_CAMERA"
             value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_TEXLOG"
+            value = "1"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
