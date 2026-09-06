@@ -546,7 +546,14 @@ actor Renderer {
         // the current pose B (which left the slice at its stale render orientation = the
         // head-turn double). Stereo only; the quad is head-locked, so only the REPORTED
         // anchor changes, not the draw. Until the first render pose is known, keep B.
-        if vcReprojFix, vc_render_mode() == VC_MODE_STEREO, let a = heldRenderAnchor {
+        //
+        // EXCEPT while the menu is up: then there is NO world baked at pose A -- only the
+        // HEAD-LOCKED menu panel is shown. Reporting A would make the compositor reproject
+        // that glued panel by the head motion over the pipeline latency -> it swims/juders
+        // (worse the staler the frame; that is why VC_CAP_LEAD_MS only dampened it). Keep
+        // the CURRENT pose B during the menu so the panel stays glued.
+        if vcReprojFix, vc_render_mode() == VC_MODE_STEREO, vc_menu_active() == 0,
+           let a = heldRenderAnchor {
             for drawable in drawables { drawable.deviceAnchor = a }
         }
 

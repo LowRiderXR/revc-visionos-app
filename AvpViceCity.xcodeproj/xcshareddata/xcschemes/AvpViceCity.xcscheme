@@ -190,7 +190,7 @@
          <EnvironmentVariable
             key = "VC_PERF_LOG"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_CAP_FACTOR"
@@ -200,12 +200,17 @@
          <EnvironmentVariable
             key = "VC_CAP_LEAD_MS"
             value = "4"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_REPROJ_FIX"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_FRAME_CAP_HZ"
+            value = "0"
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
