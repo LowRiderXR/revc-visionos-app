@@ -145,6 +145,11 @@ vc_render_mode_t vc_render_mode(void);
 /// overlay quad from head-locked (HUD) to world-anchored (menu) on this flag.
 int vc_menu_active(void);
 
+/// 1 while a loading screen / splash is the only thing being rendered (the stereo eye
+/// passes are NOT run, so the world slices are stale). The host draws the overlay
+/// (cinema/2D buffer = the splash) FULLSCREEN and hides the stale world while set.
+int vc_splash_active(void);
+
 /// 1 when verbose perf logging is enabled (env VC_PERF_LOG); gates host-side probes.
 int vc_perf_log(void);
 

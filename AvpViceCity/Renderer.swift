@@ -67,6 +67,15 @@ nonisolated let vcReprojFix: Bool = {
     ProcessInfo.processInfo.environment["VC_REPROJ_FIX"] != "0"
 }()
 
+// After a splash ends, the world slices were SUPPRESSED (stale = old gameplay); the compositor
+// may show a buffered stale slice for a frame or two before the fresh black fade-in slices
+// arrive -> a brief gameplay flash (a race, "not every time"). Hold BLACK for this many frames
+// past the splash to cover the pipeline depth. VC_SPLASH_HOLD_FRAMES.
+nonisolated let vcSplashHoldFrames: Int = {
+    if let s = ProcessInfo.processInfo.environment["VC_SPLASH_HOLD_FRAMES"], let n = Int(s), n >= 0 { return n }
+    return 4
+}()
+
 // Stereo HUD layer (Phase 5.6, approach B). The 2D/HUD/menu overlay is rendered by
 // reVC into a SEPARATE transparent buffer (hud_texture) and drawn here as its own
 // HEAD-LOCKED quad over the world slices. Unlike the world (pushed far so its baked
@@ -186,6 +195,9 @@ actor Renderer {
     var hudQuadAspect: Float = 0              // width/height the HUD vertex buffer was built for
     var menuQuadVertexBuffer: MTLBuffer?      // head-locked menu panel quad (own depth/size)
     var menuQuadAspect: Float = 0
+    var splashScreenVertexBuffer: MTLBuffer?  // head-locked full-FOV splash quad at menu depth
+    var splashScreenAspect: Float = 0
+    var splashHoldFrames = 0                   // black-hold countdown after a splash (stale-slice race)
     var didLogColorFormat = false
     // Log the texture description once PER eye_count, not globally: otherwise the
     // first mono (menu) frame permanently swallows the stereo description.
@@ -553,7 +565,7 @@ actor Renderer {
         // (worse the staler the frame; that is why VC_CAP_LEAD_MS only dampened it). Keep
         // the CURRENT pose B during the menu so the panel stays glued.
         if vcReprojFix, vc_render_mode() == VC_MODE_STEREO, vc_menu_active() == 0,
-           let a = heldRenderAnchor {
+           vc_splash_active() == 0, let a = heldRenderAnchor {
             for drawable in drawables { drawable.deviceAnchor = a }
         }
 
@@ -928,6 +940,22 @@ actor Renderer {
                     menuQuadVertexBuffer?.label = "MenuQuadVertices"
                     menuQuadAspect = aspect
                 }
+                // Splash quad: FULL FOV (like the world screen) but at the MENU depth, so
+                // the loading/title splash sits at the same distance as the menu -> no depth
+                // jump menu -> splash -> game. Head-locked; drawn via the HUD pipeline.
+                if splashScreenVertexBuffer == nil || splashScreenAspect != aspect {
+                    let proj = drawables.first?.computeProjection(viewIndex: 0) ?? matrix_identity_float4x4
+                    let p0 = proj.columns.0.x, p5 = proj.columns.1.y
+                    let hw = (p0 != 0) ? vcMenuDepth / p0 : vcMenuDepth
+                    let hh = (p5 != 0) ? vcMenuDepth / p5 : vcMenuDepth
+                    let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh,
+                                                 distance: vcMenuDepth, centerY: 0.0)
+                    splashScreenVertexBuffer = verts.withUnsafeBytes {
+                        device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
+                    }
+                    splashScreenVertexBuffer?.label = "SplashScreenVertices"
+                    splashScreenAspect = aspect
+                }
             } else {
                 if gameQuadVertexBuffer == nil || gameQuadAspect != aspect {
                     let cy: Float = vcHeadTrackingMode != 0 ? 0.0 : 1.15
@@ -980,6 +1008,42 @@ actor Renderer {
             // (the one held when the menu opened) for the whole pause; keep the menu
             // overlay live. Everything stays HEAD-LOCKED (menu + world are flat quads on
             // the same plane -- world-anchoring them only caused alignment issues, no gain).
+            // Loading / splash fade: the eye passes did NOT run (world suppressed), so the
+            // eye slices are stale. Draw the splash (overlay/cinema buffer, where DoFade /
+            // LoadingScreen put it) as a head-locked FULL-FOV quad at MENU depth and skip the
+            // stale world -> clean splash, no 2D-over-3D crossfade, hard cut when it clears.
+            let splashNow = vc_splash_active() != 0
+            if splashNow { splashHoldFrames = vcSplashHoldFrames }   // keep topped up during the splash
+            if splashNow, let splash = heldHudTexture {
+                encodeGameHud(drawables: drawables, commandBuffer: commandBuffer,
+                              texture: splash, quadOverride: splashScreenVertexBuffer)
+                return
+            }
+            // Black hold: the suppressed world slices are STALE; the compositor may show a
+            // buffered stale slice (old gameplay) for a frame or two before the fresh black
+            // fade-in slices arrive -> a brief flash (a race). Clear to BLACK for a few frames
+            // past the splash to cover the pipeline depth; the C side is at FadeValue~255 then
+            // anyway, so we only hide near-black frames.
+            if splashHoldFrames > 0 {
+                splashHoldFrames -= 1
+                for drawable in drawables {
+                    let rp = MTLRenderPassDescriptor()
+                    rp.colorAttachments[0].texture = drawable.colorTextures[0]
+                    rp.colorAttachments[0].loadAction = .clear
+                    rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+                    rp.colorAttachments[0].storeAction = .store
+                    rp.rasterizationRateMap = drawable.rasterizationRateMaps.first
+                    if layerRenderer.configuration.layout == .layered {
+                        rp.renderTargetArrayLength = drawable.views.count
+                    }
+                    if let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) {
+                        enc.label = "Splash black hold"
+                        enc.endEncoding()
+                    }
+                }
+                return
+            }
+
             let menuActive = vc_menu_active() != 0
             if menuActive {
                 if frozenWorldTexture == nil { frozenWorldTexture = gameTexture }
@@ -1175,10 +1239,13 @@ actor Renderer {
     /// top). The compositor still reprojects against the reported deviceAnchor.
     private func encodeGameHud(drawables: [LayerRenderer.Drawable],
                                commandBuffer: MTLCommandBuffer,
-                               texture: MTLTexture) {
+                               texture: MTLTexture,
+                               quadOverride: MTLBuffer? = nil) {
         let menuActive = vc_menu_active() != 0
 
-        guard let quadVertexBuffer = menuActive ? menuQuadVertexBuffer : hudQuadVertexBuffer else { return }
+        // quadOverride = the fullscreen stereo-screen quad, used for the loading splash so
+        // it fills the FOV instead of the small HUD/menu panel.
+        guard let quadVertexBuffer = quadOverride ?? (menuActive ? menuQuadVertexBuffer : hudQuadVertexBuffer) else { return }
 
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()

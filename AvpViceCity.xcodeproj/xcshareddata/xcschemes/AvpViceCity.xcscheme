@@ -212,6 +212,11 @@
             value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_SPLASH_FADEIN_MS"
+            value = "700"
+            isEnabled = "NO">
+         </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
