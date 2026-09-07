@@ -225,6 +225,16 @@
          <EnvironmentVariable
             key = "VC_MAX_RENDER_QUALITY"
             value = "off"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DRAWABLE_8BIT"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MSAA"
+            value = "4"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
