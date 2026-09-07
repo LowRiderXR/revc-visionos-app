@@ -186,6 +186,8 @@ actor Renderer {
     let gameHudPipeline: MTLRenderPipelineState
     // Depth-disabled state for the full-screen stereo blit (always fills).
     let noDepthState: MTLDepthStencilState
+    var didSetRenderQuality = false        // one-time: raise renderQuality + log the rate map
+    var lastHostMemLog: Double = 0         // throttle for the host-device memory probe
     var gameSharedEvent: MTLSharedEvent?   // id<MTLSharedEvent> from the game side (lazy)
     var gameQuadVertexBuffer: MTLBuffer?   // cinema quad, rebuilt when the texture aspect changes
     var gameQuadAspect: Float = 0          // width/height the cinema vertex buffer was built for
@@ -216,14 +218,6 @@ actor Renderer {
     var heldEyeCount: UInt32 = 1           // 1 = mono/cinema, 2 = stereo array; drives the display path
     var didLogStereoDisplay = false
 
-    // [vc-repro] probe: head yaw rate. The content is rendered with the pose pushed at
-    // submit, buffered, then displayed while deviceAnchor is reported as the CURRENT pose;
-    // the compositor reprojects by that difference = yawRate * pipeline-latency. This logs
-    // the rate so the mismatch angle can be read off (rate * ~11-22 ms from [vc-pose-jitter]).
-    var probeLastYaw: Float? = nil
-    var probeLastYawT: Double = 0
-    var probeMaxRate: Float = 0
-    var probeLastLogT: Double = 0
 
     // Render-pose reprojection fix: ring of the DeviceAnchor each head pose was pushed
     // with, keyed by vc_last_pushed_pose_time(). The displayed buffer carries
@@ -476,6 +470,46 @@ actor Renderer {
         let drawables = frame.queryDrawables()
         guard !drawables.isEmpty else { return }
 
+        // Leak split: the C [vc-mem] logs the ANGLE device (g_mtlDevice). This logs the HOST
+        // (compositor/Swift) device. Same value & both grow -> one shared device (leak could
+        // be compositor drawables too); only ANGLE grows -> the leak is reVC/ANGLE-side.
+        do {
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - lastHostMemLog >= 2.0 {
+                lastHostMemLog = now
+                print(String(format: "[vc-mem-host] hostDevice.currentAllocatedSize=%llu MB", UInt64(device.currentAllocatedSize) / 1_000_000))
+            }
+        }
+
+        // visionOS 26 render quality (the real PPD lever above the old 26-PPD FFR cap). Set the
+        // per-frame renderQuality (GPU cost) high; the ceiling is configuration.maxRenderQuality
+        // (set in makeConfiguration). Then log the rate map: if physicalSize / the drawable
+        // texture grew, the drawable now rasterizes more pixels and we need higher slice res.
+        if !didSetRenderQuality {
+            didSetRenderQuality = true
+            // renderQuality MUST NOT exceed maxRenderQuality or CompositorServices aborts
+            // ("abort with payload or reason"). When VC_MAX_RENDER_QUALITY=off we left
+            // maxRenderQuality at the system default, so DON'T force renderQuality up; else
+            // clamp it to the maxRenderQuality we set in makeConfiguration.
+            let mqEnv = ProcessInfo.processInfo.environment["VC_MAX_RENDER_QUALITY"]
+            if mqEnv == "off" {
+                print("[vc-rq] maxRenderQuality=off -> leaving renderQuality at system default")
+            } else {
+                let maxq = mqEnv.flatMap { Float($0) } ?? 1.0
+                var rq = ProcessInfo.processInfo.environment["VC_RENDER_QUALITY"].flatMap { Float($0) } ?? 1.0
+                rq = max(0.0, min(min(1.0, maxq), rq))   // clamp to maxRenderQuality
+                layerRenderer.renderQuality = LayerRenderer.RenderQuality(rq)
+            }
+            let tex = drawables[0].colorTextures[0]
+            if let rm = drawables[0].rasterizationRateMaps.first {
+                let phys = rm.physicalSize(layer: 0)
+                let scr = rm.screenSize
+                print("[vc-rq] rateMap physical=\(phys.width)x\(phys.height) screen=\(scr.width)x\(scr.height) drawableTex=\(tex.width)x\(tex.height)")
+            } else {
+                print("[vc-rq] (no rate map) drawableTex=\(tex.width)x\(tex.height)")
+            }
+        }
+
         // Compositor frame interval (mean via EMA) — updated for every presented
         // frame, including the no-anchor path below, so dropped frames show up.
         if vcDebugStats {
@@ -724,34 +758,6 @@ actor Renderer {
 
         let simdDeviceAnchor = drawable.deviceAnchor?.originFromAnchorTransform ?? matrix_identity_float4x4
 
-        // [vc-repro] head yaw rate: the render pose (A, pushed here, then buffered) vs the
-        // reported deviceAnchor (B, current at display) differ by yawRate * pipeline-latency
-        // -> the compositor reprojects the flat slice by that angle = the head-turn double
-        // image. Zero when the head is still (matches: stick/driving never doubles). Peak
-        // over 1 s so a brief fast turn is visible. VC_PERF_LOG only.
-        if vc_render_mode() == VC_MODE_STEREO && vc_perf_log() != 0 {
-            let fwd = -SIMD3<Float>(simdDeviceAnchor.columns.2.x, simdDeviceAnchor.columns.2.y, simdDeviceAnchor.columns.2.z)
-            let yaw = atan2(-fwd.x, -fwd.z)
-            let t = drawable.frameTiming.presentationTime.timeInterval
-            if let prev = probeLastYaw, probeLastYawT > 0 {
-                let dt = t - probeLastYawT
-                if dt > 0.0001 {
-                    var d = yaw - prev
-                    if d > .pi { d -= 2 * .pi } else if d < -.pi { d += 2 * .pi }
-                    let rate = abs(d) / Float(dt) * 180.0 / .pi   // deg/s
-                    if rate > probeMaxRate { probeMaxRate = rate }
-                }
-            }
-            probeLastYaw = yaw
-            probeLastYawT = t
-            if probeLastLogT == 0 { probeLastLogT = t }
-            if t - probeLastLogT >= 1.0 {
-                probeLastLogT = t
-                let peakDegPerFrame = probeMaxRate / 90.0   // ~= mismatch at one 90 Hz frame of latency
-                print(String(format: "[vc-repro] head yaw PEAK rate = %.1f deg/s  (~%.2f deg per 90Hz frame of pipeline latency)", probeMaxRate, peakDegPerFrame))
-                probeMaxRate = 0
-            }
-        }
 
         func makeEye(_ viewIndex: Int) -> vc_eye_t {
             let view = drawable.views[viewIndex]

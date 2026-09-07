@@ -29,6 +29,24 @@ extension ImmersiveSpaceContent: CompositorLayerConfiguration {
         let supportedLayouts = capabilities.supportedLayouts(options: options)
 
         configuration.layout = supportedLayouts.contains(.layered) ? .layered : .dedicated
+
+        // visionOS 26: raise the drawable's MAX render quality (PPD ceiling; memory cost).
+        // Requires foveation. The per-frame renderQuality (GPU cost) is set on the
+        // layerRenderer in the render loop. VC_MAX_RENDER_QUALITY (0..1, default 1.0).
+        // VC_MAX_RENDER_QUALITY="off" -> do NOT touch maxRenderQuality (system default ~26 PPD
+        // drawable) -- the A/B to test whether raising it is what introduced the memory growth.
+        let mqEnv = ProcessInfo.processInfo.environment["VC_MAX_RENDER_QUALITY"]
+        if foveationEnabled && mqEnv != "off" {
+            let mq = mqEnv.flatMap { Float($0) } ?? 1.0
+            configuration.maxRenderQuality = LayerRenderer.RenderQuality(max(0.0, min(1.0, mq)))
+        }
+
+        // Drawable colour format: default rgba16Float (HDR, 8 bytes/px). ALVR/Klepton use
+        // bgra8Unorm_srgb (4 bytes/px) -> HALF the drawable memory. VC_DRAWABLE_8BIT=1 to A/B.
+        if ProcessInfo.processInfo.environment["VC_DRAWABLE_8BIT"] == "1" {
+            configuration.colorFormat = .bgra8Unorm_srgb
+        }
+        print("[vc-fmt] drawable colorFormat rawValue=\(configuration.colorFormat.rawValue)")
     }
 }
 
