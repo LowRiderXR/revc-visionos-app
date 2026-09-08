@@ -164,7 +164,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_HUD_SIZE"
-            value = "0.25"
+            value = "0.4"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -179,7 +179,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_STEREO_CAMERA"
-            value = "1"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -220,7 +220,7 @@
          <EnvironmentVariable
             key = "VC_RES"
             value = "4"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MAX_RENDER_QUALITY"
@@ -234,8 +234,33 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MSAA"
-            value = "4"
-            isEnabled = "YES">
+            value = "2"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MIPMAP"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_ANISO"
+            value = "8"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MIPMAP_ALPHA"
+            value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_SKIN_FOG"
+            value = "off"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_SKIN_LODBIAS"
+            value = "-2.5"
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
