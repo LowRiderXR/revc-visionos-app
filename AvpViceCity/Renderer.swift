@@ -475,7 +475,7 @@ actor Renderer {
         // be compositor drawables too); only ANGLE grows -> the leak is reVC/ANGLE-side.
         do {
             let now = CFAbsoluteTimeGetCurrent()
-            if now - lastHostMemLog >= 2.0 {
+            if vc_perf_log() != 0, now - lastHostMemLog >= 2.0 {
                 lastHostMemLog = now
                 print(String(format: "[vc-mem-host] hostDevice.currentAllocatedSize=%llu MB", UInt64(device.currentAllocatedSize) / 1_000_000))
             }
@@ -583,7 +583,7 @@ actor Renderer {
         // are all encoded above. Anything encoded AFTER encodePresent never
         // reaches the display, so presentation must come after every content pass.
         let nowPresent = CFAbsoluteTimeGetCurrent()
-        if nowPresent - lastPresentLogTime >= 1.0 {
+        if vc_perf_log() != 0, nowPresent - lastPresentLogTime >= 1.0 {
             lastPresentLogTime = nowPresent
             print("[vc-quad] present: NORMAL path, drawables=\(drawables.count) anchor0set=\(drawables[0].deviceAnchor != nil) heldEyeCount=\(heldEyeCount)")
         }
@@ -715,7 +715,7 @@ actor Renderer {
         // that are implausible or track with head motion -> translation-conversion
         // bug (b).
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastHeadLogTime >= 1.0 {
+        if vc_perf_log() != 0, now - lastHeadLogTime >= 1.0 {
             lastHeadLogTime = now
             print(String(format: "[vc-head] M_head translation (m): x=%.3f y=%.3f z=%.3f",
                          mHead.columns.3.x, mHead.columns.3.y, mHead.columns.3.z))
@@ -985,7 +985,7 @@ actor Renderer {
         // whether the stereo branch is chosen every frame and what eye_count the
         // pause menu actually delivers.
         let nowPath = CFAbsoluteTimeGetCurrent()
-        if nowPath - lastPathLogTime >= 1.0 {
+        if vc_perf_log() != 0, nowPath - lastPathLogTime >= 1.0 {
             lastPathLogTime = nowPath
             print("[vc-quad] path: branch=\(heldEyeCount >= 2 ? "STEREO" : "cinema") heldEyeCount=\(heldEyeCount) heldType=\(gameTexture.textureType.rawValue) heldArrayLen=\(gameTexture.arrayLength) wait=\(waitValue)")
         }
@@ -1200,7 +1200,7 @@ actor Renderer {
             }
 
             let nowDraw = CFAbsoluteTimeGetCurrent()
-            if nowDraw - lastStereoDrawLogTime >= 1.0 {
+            if vc_perf_log() != 0, nowDraw - lastStereoDrawLogTime >= 1.0 {
                 lastStereoDrawLogTime = nowDraw
                 let ct = drawable.colorTextures[0]
                 // Far-plane probe: project the quad CENTRE and a CORNER through eye 0
