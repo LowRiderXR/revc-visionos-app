@@ -234,8 +234,8 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MSAA"
-            value = "0"
-            isEnabled = "NO">
+            value = "4"
+            isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MIPMAP"
