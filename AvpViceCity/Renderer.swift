@@ -225,6 +225,8 @@ actor Renderer {
     let gameStereoPipeline: MTLRenderPipelineState
     // Same, with the test-fill fragment (VC_STEREO_TESTFILL).
     let gameStereoTestPipeline: MTLRenderPipelineState
+    // Same, with the foveation-unwarp fragment (VC_FOVEATE): unwarps the rate-mapped slice.
+    let gameStereoFoveatedPipeline: MTLRenderPipelineState
     // Stereo HUD layer: the transparent 2D overlay on a head-locked quad, blended
     // over the world slices (premultiplied alpha). Reuses the cinema quad shaders.
     let gameHudPipeline: MTLRenderPipelineState
@@ -238,6 +240,8 @@ actor Renderer {
     var gameQuadAspect: Float = 0          // width/height the cinema vertex buffer was built for
     var stereoScreenVertexBuffer: MTLBuffer?  // stereo quad (far distance), rebuilt on aspect change
     var stereoScreenAspect: Float = 0         // width/height the stereo vertex buffer was built for
+    var foveRateBuffer: MTLBuffer?            // foveation rate-map parameter data for the unwarp shader
+    var foveRateMapPtr: UnsafeMutableRawPointer?  // the C rate map the param buffer was built from
     var hudQuadVertexBuffer: MTLBuffer?       // head-locked HUD quad, rebuilt on aspect change
     var hudQuadAspect: Float = 0              // width/height the HUD vertex buffer was built for
     var menuQuadVertexBuffer: MTLBuffer?      // head-locked menu panel quad (own depth/size)
@@ -323,6 +327,9 @@ actor Renderer {
             gameStereoTestPipeline = try Self.buildGameStereoPipeline(device: device, layerRenderer: layerRenderer,
                                                                       vertex: "vc_stereo_vertex",
                                                                       fragment: "vc_stereo_fragment_testfill")
+            gameStereoFoveatedPipeline = try Self.buildGameStereoPipeline(device: device, layerRenderer: layerRenderer,
+                                                                          vertex: "vc_stereo_vertex",
+                                                                          fragment: "vc_stereo_fragment_foveated")
             gameHudPipeline = try Self.buildHudPipeline(device: device, layerRenderer: layerRenderer)
             statsBarPipeline = try Self.buildStatsBarPipeline(device: device, layerRenderer: layerRenderer)
         } catch {
@@ -1228,6 +1235,24 @@ actor Renderer {
                                         texture: MTLTexture) {
         guard let quadVertexBuffer = stereoScreenVertexBuffer else { return }
 
+        // Foveation unwarp: if the slices were rendered with a rate map, cache its
+        // parameter data (once) so the fragment shader can convert logical->physical when
+        // sampling the warped slice. nil when VC_FOVEATE is off -> plain sampling path.
+        var foveActive = false
+        if !vcStereoTestFill, let ratePtr = vc_foveation_rate_map() {
+            if foveRateBuffer == nil || foveRateMapPtr != ratePtr {
+                let rateMap = Unmanaged<AnyObject>.fromOpaque(ratePtr).takeUnretainedValue() as! MTLRasterizationRateMap
+                let sa = rateMap.parameterDataSizeAndAlign
+                if let buf = device.makeBuffer(length: sa.size, options: [.storageModeShared]) {
+                    rateMap.copyParameterData(buffer: buf, offset: 0)
+                    buf.label = "FoveationRateParams"
+                    foveRateBuffer = buf
+                    foveRateMapPtr = ratePtr
+                }
+            }
+            foveActive = (foveRateBuffer != nil)
+        }
+
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()
             renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
@@ -1252,7 +1277,14 @@ actor Renderer {
             }
             renderEncoder.label = "Game Stereo Screen"
             renderEncoder.setCullMode(.none)
-            renderEncoder.setRenderPipelineState(vcStereoTestFill ? gameStereoTestPipeline : gameStereoPipeline)
+            renderEncoder.setRenderPipelineState(vcStereoTestFill ? gameStereoTestPipeline
+                                                 : (foveActive ? gameStereoFoveatedPipeline : gameStereoPipeline))
+            if foveActive, let rb = foveRateBuffer {
+                // Bind the rate map parameter data + slice size for the unwarp fragment.
+                renderEncoder.setFragmentBuffer(rb, offset: 0, index: 0)
+                var texSize = SIMD2<Float>(Float(texture.width), Float(texture.height))
+                renderEncoder.setFragmentBytes(&texSize, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
+            }
             renderEncoder.setDepthStencilState(depthState)
 
             let viewports = drawable.views.map { $0.textureMap.viewport }

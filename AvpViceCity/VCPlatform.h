@@ -100,6 +100,11 @@ void vc_release_frame(uint32_t index);
 /// Call once; NULL if the shared-event path is unavailable (fallback in use).
 void *vc_get_shared_event(void);
 
+/// The foveation rasterization rate map (opaque id<MTLRasterizationRateMap>) the eye
+/// slices were rendered with, or NULL when VC_FOVEATE is off. The display quad binds its
+/// parameter data to unwarp (logical->physical) when sampling the warped slice.
+void *vc_foveation_rate_map(void);
+
 // ---------------------------------------------------------------------------
 // Gamepad input (Swift/compositor -> reVC game thread).
 // The Swift side reads GCController on the main thread and pushes the latest

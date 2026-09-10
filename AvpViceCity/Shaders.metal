@@ -108,6 +108,24 @@ fragment float4 vc_stereo_fragment(VCStereoInOut in [[stage_in]],
     return float4(vc_srgb_to_linear(c.rgb), c.a);
 }
 
+// Foveated variant (VC_FOVEATE): the slice was rendered with a rasterization rate map,
+// so its content sits in a WARPED physical layout (dense centre, coarse edges) filling
+// only the top-left physicalSize of the WxH texture. Unwarp per pixel: logical screen
+// coord -> physical coord via the rate map decoder, then sample. texSize = the slice's
+// WxH (== the rate map's screenSize). See Metal "Scaling variable rasterization rate".
+fragment float4 vc_stereo_fragment_foveated(VCStereoInOut in [[stage_in]],
+                                            texture2d_array<float> tex [[texture(0)]],
+                                            constant rasterization_rate_map_data &rateData [[buffer(0)]],
+                                            constant float2 &texSize [[buffer(1)]])
+{
+    constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
+    rasterization_rate_map_decoder map(rateData);
+    float2 screenPx = in.uv * texSize;                                  // logical pixels
+    float2 physPx   = map.map_screen_to_physical_coordinates(screenPx); // -> physical pixels
+    float4 c = tex.sample(s, physPx / texSize, in.eye);                 // normalized into WxH
+    return float4(vc_srgb_to_linear(c.rgb), c.a);
+}
+
 // Diagnostic (VC_STEREO_TESTFILL=1): ignore the texture, paint eye 0 red / eye 1
 // green. Proves the pass rasterizes, the pipeline runs, and the amplification
 // routes each eye to its slice -- isolating "pass broken" from "sampling broken",
