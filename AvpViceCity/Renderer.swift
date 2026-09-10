@@ -242,6 +242,7 @@ actor Renderer {
     var stereoScreenAspect: Float = 0         // width/height the stereo vertex buffer was built for
     var foveRateBuffer: MTLBuffer?            // foveation rate-map parameter data for the unwarp shader
     var foveRateMapPtr: UnsafeMutableRawPointer?  // the C rate map the param buffer was built from
+    var didPushFoveCurve = false             // one-time: sampled the compositor optical curve + pushed to reVC
     var hudQuadVertexBuffer: MTLBuffer?       // head-locked HUD quad, rebuilt on aspect change
     var hudQuadAspect: Float = 0              // width/height the HUD vertex buffer was built for
     var menuQuadVertexBuffer: MTLBuffer?      // head-locked menu panel quad (own depth/size)
@@ -637,6 +638,11 @@ actor Renderer {
 
         frame.startSubmission()
 
+        // Foveation: sample the compositor's own optical rate curve (once) and hand it to
+        // reVC, so the slice rate map matches the Vision Pro lenses (dense zone on the true
+        // off-centre optical axis) instead of a hand-picked bell.
+        pushFoveationCurveIfNeeded(drawables[0])
+
         for drawable in drawables {
             render(drawable: drawable, deviceAnchor: deviceAnchor, commandBuffer: commandBuffer)
         }
@@ -903,6 +909,81 @@ actor Renderer {
             cx - halfWidth, cy + halfHeight, cz,  0.0, 1.0,   // top-left
             cx + halfWidth, cy + halfHeight, cz,  1.0, 1.0,   // top-right
         ]
+    }
+
+    /// Sample one rate map's per-axis local sampling rate (d physical / d screen) at
+    /// `zones` points across each axis, by differencing physicalCoordinates. The rate is
+    /// ~1 at the optical centre and falls toward the edges; the peak is off-centre per eye.
+    private func sampleAxisRates(_ rm: MTLRasterizationRateMap, layer: Int, zones: Int) -> ([Float], [Float]) {
+        let ss = rm.screenSize
+        let W = Float(ss.width), H = Float(ss.height)
+        let midX = W * 0.5, midY = H * 0.5
+        var h = [Float](repeating: 0, count: zones)
+        var v = [Float](repeating: 0, count: zones)
+        for i in 0..<zones {
+            let sx = (Float(i) + 0.5) / Float(zones) * W
+            let stepX = Swift.max(1.0, W / Float(zones) * 0.5)
+            let x0 = Swift.max(0, sx - stepX * 0.5), x1 = Swift.min(W, sx + stepX * 0.5)
+            let a = rm.physicalCoordinates(screenCoordinates: MTLCoordinate2DMake(x0, midY), layer: layer)
+            let b = rm.physicalCoordinates(screenCoordinates: MTLCoordinate2DMake(x1, midY), layer: layer)
+            h[i] = (x1 - x0) > 0 ? Float(b.x - a.x) / (x1 - x0) : 0
+
+            let sy = (Float(i) + 0.5) / Float(zones) * H
+            let stepY = Swift.max(1.0, H / Float(zones) * 0.5)
+            let y0 = Swift.max(0, sy - stepY * 0.5), y1 = Swift.min(H, sy + stepY * 0.5)
+            let c = rm.physicalCoordinates(screenCoordinates: MTLCoordinate2DMake(midX, y0), layer: layer)
+            let d = rm.physicalCoordinates(screenCoordinates: MTLCoordinate2DMake(midX, y1), layer: layer)
+            v[i] = (y1 - y0) > 0 ? Float(d.y - c.y) / (y1 - y0) : 0
+        }
+        return (h, v)
+    }
+
+    /// Once, when foveation is wanted: sample the compositor's optical rate curve from the
+    /// per-eye drawable rate maps, envelope across eyes, peak-normalize, floor, log, and
+    /// push to reVC (which builds the slice rate map from it). Klepton's sampleCurve.
+    private func pushFoveationCurveIfNeeded(_ drawable: LayerRenderer.Drawable) {
+        guard !didPushFoveCurve, vc_foveation_wanted() != 0 else { return }
+        let maps = drawable.rasterizationRateMaps
+        guard !maps.isEmpty else { return }   // foveation not enabled on the layer -> nothing to sample
+        let zones = 32
+        var h = [Float](repeating: 0, count: zones)
+        var v = [Float](repeating: 0, count: zones)
+        // A stereo drawable exposes ONE rate map with a LAYER PER EYE (each eye's optical
+        // axis is nasally shifted, mirror-image). Envelope (max per zone) across all layers
+        // of all maps, so the single shared slice curve never renders EITHER eye coarser
+        // than it needs -> symmetric, wide sharp band covering both optical axes.
+        var totalLayers = 0
+        for rm in maps {
+            for layer in 0..<Swift.max(1, rm.layerCount) {
+                let (eh, ev) = sampleAxisRates(rm, layer: layer, zones: zones)
+                for i in 0..<zones { h[i] = Swift.max(h[i], eh[i]); v[i] = Swift.max(v[i], ev[i]) }
+                totalLayers += 1
+            }
+        }
+        // The eyes are mirror-symmetric; the single shared curve must be too. Envelope each
+        // axis with its mirror so the sharp band covers BOTH optical axes and neither eye is
+        // rendered coarser than it needs. Robust even if only one layer was available.
+        h = (0..<zones).map { Swift.max(h[$0], h[zones - 1 - $0]) }
+        v = (0..<zones).map { Swift.max(v[$0], v[zones - 1 - $0]) }
+
+        let floorRate: Float = {
+            if let s = ProcessInfo.processInfo.environment["VC_FOVEATE_EDGE"], let f = Float(s), f > 0.01, f <= 1 { return f }
+            return 0.05
+        }()
+        func normalize(_ a: inout [Float]) {
+            let peak = Swift.max(a.max() ?? 1, 1e-4)
+            for i in a.indices { a[i] = Swift.max(a[i] / peak, floorRate) }
+        }
+        normalize(&h); normalize(&v)
+        didPushFoveCurve = true
+        print("[vc-fove-swift] sampled compositor curve: zones=\(zones) maps=\(maps.count) layers=\(totalLayers) floor=\(floorRate)")
+        print("[vc-fove-swift]   H=" + h.map { String(format: "%.2f", $0) }.joined(separator: " "))
+        print("[vc-fove-swift]   V=" + v.map { String(format: "%.2f", $0) }.joined(separator: " "))
+        h.withUnsafeBufferPointer { hp in
+            v.withUnsafeBufferPointer { vp in
+                vc_set_foveation_curve(hp.baseAddress, Int32(zones), vp.baseAddress, Int32(zones))
+            }
+        }
     }
 
     /// Draw the game texture on the world-anchored quad, both eyes in one

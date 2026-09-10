@@ -105,6 +105,14 @@ void *vc_get_shared_event(void);
 /// parameter data to unwarp (logical->physical) when sampling the warped slice.
 void *vc_foveation_rate_map(void);
 
+/// 1 when foveation is requested (VC_FOVEATE=1). Gate for sampling + pushing the curve.
+int vc_foveation_wanted(void);
+
+/// Push the sampled compositor rate curve (per-axis sampling rates, enveloped over both
+/// eyes, peak-normalized, floored). The reVC side builds its slice rate map from this and
+/// registers it. nx/ny are the per-axis zone counts (2..64).
+void vc_set_foveation_curve(const float *h, int nx, const float *v, int ny);
+
 // ---------------------------------------------------------------------------
 // Gamepad input (Swift/compositor -> reVC game thread).
 // The Swift side reads GCController on the main thread and pushes the latest

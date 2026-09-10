@@ -280,7 +280,7 @@
          <EnvironmentVariable
             key = "VC_FOVEATE_EDGE"
             value = "0.15"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
