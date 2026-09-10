@@ -21,6 +21,13 @@ nonisolated let vcDebugStats = ProcessInfo.processInfo.environment["VC_DEBUG_STA
 // game texture, to tell "pass broken" from "sampling broken". Off by default.
 nonisolated let vcStereoTestFill = ProcessInfo.processInfo.environment["VC_STEREO_TESTFILL"] == "1"
 
+// Diagnostic, default OFF. Move the game-slice shared-event wait into its OWN command
+// buffer so the main command buffer's gpuStart..gpuEnd measures PURE compositing, and the
+// wait buffer measures how long the compositor GPU idles waiting for the game slices to
+// finish (a proxy for the game-slice GPU cost, which our metrics otherwise never show).
+// Splits [vc-gpu] into composite vs. wait. VC_GPU_SPLIT=1. Real path unchanged when off.
+nonisolated let vcGpuSplit = ProcessInfo.processInfo.environment["VC_GPU_SPLIT"] == "1"
+
 // Throttle for the (off-thread) command-buffer error logger.
 nonisolated(unsafe) var vcLastCBErrorLog: Double = 0
 
@@ -133,8 +140,45 @@ nonisolated let vcFrameBudgetMs = 1000.0 / 90.0   // 11.1 ms
 final class FrameStats: @unchecked Sendable {
     private let lock = NSLock()
     private var _gpuMs: Double = 0
+    // Compositor-pass GPU-time window (min/max/avg over the log interval) for [vc-gpu].
+    private var _sum = 0.0, _min = 0.0, _max = 0.0, _last = 0.0
+    private var _count = 0
     var gpuMs: Double { lock.lock(); defer { lock.unlock() }; return _gpuMs }
     func setGPUMs(_ v: Double) { lock.lock(); _gpuMs = v; lock.unlock() }
+    // Record one command buffer's GPU duration (ms). Feeds both the overlay bars
+    // (_gpuMs) and the [vc-gpu] window stats.
+    func recordGPUMs(_ v: Double) {
+        lock.lock(); defer { lock.unlock() }
+        _gpuMs = v; _last = v; _sum += v; _count += 1
+        if _count == 1 || v < _min { _min = v }
+        if v > _max { _max = v }
+    }
+    // (last, avg, min, max, n) over the window, then reset. nil if no samples yet.
+    func drainGPUStats() -> (Double, Double, Double, Double, Int)? {
+        lock.lock(); defer { lock.unlock() }
+        if _count == 0 { return nil }
+        let r = (_last, _sum / Double(_count), _min, _max, _count)
+        _sum = 0; _count = 0; _min = 0; _max = 0
+        return r
+    }
+
+    // Separate window for the game-slice event-wait (VC_GPU_SPLIT): how long the
+    // compositor GPU idles on encodeWaitForEvent until the game slices are done.
+    private var _wsum = 0.0, _wmin = 0.0, _wmax = 0.0, _wlast = 0.0
+    private var _wcount = 0
+    func recordWaitMs(_ v: Double) {
+        lock.lock(); defer { lock.unlock() }
+        _wlast = v; _wsum += v; _wcount += 1
+        if _wcount == 1 || v < _wmin { _wmin = v }
+        if v > _wmax { _wmax = v }
+    }
+    func drainWaitStats() -> (Double, Double, Double, Double, Int)? {
+        lock.lock(); defer { lock.unlock() }
+        if _wcount == 0 { return nil }
+        let r = (_wlast, _wsum / Double(_wcount), _wmin, _wmax, _wcount)
+        _wsum = 0; _wcount = 0; _wmin = 0; _wmax = 0
+        return r
+    }
 }
 
 extension LayerRenderer.Clock.Instant {
@@ -188,6 +232,7 @@ actor Renderer {
     let noDepthState: MTLDepthStencilState
     var didSetRenderQuality = false        // one-time: raise renderQuality + log the rate map
     var lastHostMemLog: Double = 0         // throttle for the host-device memory probe
+    var lastGpuLogTime: Double = 0         // throttle for the [vc-gpu] compositor GPU-time log
     var gameSharedEvent: MTLSharedEvent?   // id<MTLSharedEvent> from the game side (lazy)
     var gameQuadVertexBuffer: MTLBuffer?   // cinema quad, rebuilt when the texture aspect changes
     var gameQuadAspect: Float = 0          // width/height the cinema vertex buffer was built for
@@ -459,11 +504,14 @@ actor Renderer {
             }
         }
 
-        // Capture this frame's GPU time for the stats overlay (read next frame).
-        if vcDebugStats {
+        // Compositor-pass GPU time (base clear + game-quad sample + present), measured
+        // directly from the command buffer's GPU start/end — the number the foveation win
+        // is compared against, not inferred from startframe. Always recorded (cheap);
+        // logged throttled below as [vc-gpu], and read by the VC_DEBUG_STATS overlay bars.
+        do {
             let stats = self.frameStats
             commandBuffer.addCompletedHandler { cb in
-                stats.setGPUMs((cb.gpuEndTime - cb.gpuStartTime) * 1000.0)
+                stats.recordGPUMs((cb.gpuEndTime - cb.gpuStartTime) * 1000.0)
             }
         }
 
@@ -478,6 +526,27 @@ actor Renderer {
             if vc_perf_log() != 0, now - lastHostMemLog >= 2.0 {
                 lastHostMemLog = now
                 print(String(format: "[vc-mem-host] hostDevice.currentAllocatedSize=%llu MB", UInt64(device.currentAllocatedSize) / 1_000_000))
+            }
+        }
+
+        // Compositor-pass GPU time, measured directly (not inferred from startframe).
+        // Always-on in stereo like [vc-frame], ~1 s cadence: min/max catch the cutscene
+        // spike, avg the steady cost. This is the baseline the foveation win is measured
+        // against — with vs. without a rate map on the same scene.
+        if vc_render_mode() == VC_MODE_STEREO {
+            let nowGpu = CFAbsoluteTimeGetCurrent()
+            if nowGpu - lastGpuLogTime >= 1.0, let g = frameStats.drainGPUStats() {
+                lastGpuLogTime = nowGpu
+                if vcGpuSplit, let w = frameStats.drainWaitStats() {
+                    // Split: g = pure compositing, w = idle wait for the game slices.
+                    print(String(format: "[vc-gpu] composite avg=%.1f min=%.1f max=%.1f | wait(game slices) avg=%.1f min=%.1f max=%.1f ms (n=%d)",
+                                 g.1, g.2, g.3, w.1, w.2, w.3, g.4))
+                } else {
+                    // Combined: this includes the GPU-side encodeWaitForEvent on the game
+                    // slices, so it is wait+composite, not pure compositing (set VC_GPU_SPLIT=1).
+                    print(String(format: "[vc-gpu] wait+composite: last=%.1f avg=%.1f min=%.1f max=%.1f ms (n=%d)",
+                                 g.0, g.1, g.2, g.3, g.4))
+                }
             }
         }
 
@@ -994,7 +1063,21 @@ actor Renderer {
         // (fallback path) or no value (VC_NOFENCE) — waiting on a value that is
         // never signalled would stall the frame.
         if let event = gameSharedEvent, waitValue != 0 {
-            commandBuffer.encodeWaitForEvent(event, value: waitValue)
+            if vcGpuSplit, let wcb = commandQueue.makeCommandBuffer() {
+                // Measurement: the wait runs in its OWN command buffer, committed before the
+                // main one on the same queue (so ordering still gates the composite on a
+                // complete slice). Its gpuStart..gpuEnd = the idle wait for the game slices;
+                // the main buffer then measures pure compositing.
+                wcb.label = "GameEventWait(measure)"
+                wcb.encodeWaitForEvent(event, value: waitValue)
+                let stats = self.frameStats
+                wcb.addCompletedHandler { cb in
+                    stats.recordWaitMs((cb.gpuEndTime - cb.gpuStartTime) * 1000.0)
+                }
+                wcb.commit()
+            } else {
+                commandBuffer.encodeWaitForEvent(event, value: waitValue)
+            }
         }
 
         // Stereo: slice per eye on a world-anchored screen projected per eye (the

@@ -220,7 +220,7 @@
          <EnvironmentVariable
             key = "VC_RES"
             value = "4"
-            isEnabled = "NO">
+            isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MAX_RENDER_QUALITY"
@@ -234,7 +234,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MSAA"
-            value = "2"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -259,8 +259,18 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_SKIN_LODBIAS"
-            value = "-2.5"
+            value = "0"
             isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_GPU_SPLIT"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_EYE_GPU"
+            value = "1"
+            isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
