@@ -235,7 +235,7 @@
          <EnvironmentVariable
             key = "VC_MSAA"
             value = "4"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MIPMAP"
@@ -270,7 +270,7 @@
          <EnvironmentVariable
             key = "VC_EYE_GPU"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_FOVEATE"

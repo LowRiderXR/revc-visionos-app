@@ -88,20 +88,22 @@ nonisolated let vcSplashHoldFrames: Int = {
 // HEAD-LOCKED quad over the world slices. Unlike the world (pushed far so its baked
 // disparity dominates), the HUD is a flat 2D image, so it sits at a comfortable
 // reading distance with normal convergence. VC_HUD_DEPTH = metres from the head
-// (default 1.8). VC_HUD_SIZE = fraction of the vertical FOV the quad fills at that
-// depth (default 1.0 = full FOV, i.e. same coverage as the flat screen); shrink it
-// to pull the corners (radar, cash) into comfortable central view.
+// (default 2.0). VC_HUD_SIZE = fraction of the vertical FOV the quad fills at that
+// depth (default 0.4); shrink it to pull the corners (radar, cash) into comfortable
+// central view.
 nonisolated let vcHudDepth: Float = {
     if let s = ProcessInfo.processInfo.environment["VC_HUD_DEPTH"], let d = Float(s), d > 0 {
         return d
     }
-    return 1.8
+    return 2.0
 }()
 nonisolated let vcHudSize: Float = {
-    if let s = ProcessInfo.processInfo.environment["VC_HUD_SIZE"], let d = Float(s), d > 0 {
+    // 0..1 fraction of the vertical FOV; 0 = HUD effectively hidden (zero-size quad).
+    // Only an unset/invalid value falls back to the default.
+    if let s = ProcessInfo.processInfo.environment["VC_HUD_SIZE"], let d = Float(s), d >= 0 {
         return d
     }
-    return 1.0
+    return 0.4
 }()
 // Draw the stereo HUD overlay at all. Default on. VC_HUD=0 disables it, to A/B
 // whether a black screen is the HUD layer covering the world (overlay opaque) vs a
@@ -115,7 +117,7 @@ nonisolated let vcHudEnabled: Bool = {
 // it on a WORLD-ANCHORED quad frozen at the head pose captured when the menu opened
 // -- it appears in front of you and stays put like a screen in the room. VC_MENU_DEPTH
 // = metres from that frozen pose (default 2.0). VC_MENU_SIZE = fraction of the vertical
-// FOV the panel fills at that depth when it opens (default 1.0).
+// FOV the panel fills at that depth when it opens (default 0.25).
 nonisolated let vcMenuDepth: Float = {
     if let s = ProcessInfo.processInfo.environment["VC_MENU_DEPTH"], let d = Float(s), d > 0 {
         return d
@@ -126,7 +128,7 @@ nonisolated let vcMenuSize: Float = {
     if let s = ProcessInfo.processInfo.environment["VC_MENU_SIZE"], let d = Float(s), d > 0 {
         return d
     }
-    return 1.0
+    return 0.25
 }()
 
 

@@ -56,6 +56,10 @@ struct AvpViceCityApp: App {
     @State private var appModel = AppModel()
 
     init() {
+        // Persisted launch settings (VC_HUD_SIZE / VC_MSAA) -> environment, BEFORE any
+        // consumer (drawable config, render loop, reVC) reads them.
+        GameSettings.applyToEnvironment()
+
         // Configure the audio session BEFORE OpenAL opens its device (that happens
         // later on the game thread). .playback is window-independent, so audio
         // survives closing the 2D window.
@@ -67,10 +71,14 @@ struct AvpViceCityApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environment(appModel)
         }
+        // On visionOS the window follows the Scene size, not the content's .frame.
+        // Tie it to the content and give a small default so the launcher is compact.
+        .windowResizability(.contentSize)
+        .defaultSize(width: 340, height: 340)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveSpaceContent(appModel: appModel)
