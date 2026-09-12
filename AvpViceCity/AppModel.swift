@@ -25,17 +25,33 @@ class AppModel {
 /// environment via setenv so the existing consumers pick them up unchanged:
 ///   VC_HUD_SIZE  -> Renderer.swift `vcHudSize`
 ///   VC_MSAA      -> visionos_angle.mm `vcMsaaSamples()`
+///   VC_RES       -> visionos.cpp `vcScreenInit()` (render resolution per eye, step 0..4)
 /// Call once at launch and again right before opening the immersive space.
 enum GameSettings {
     static let hudSizeDefault: Double = 0.4
     static let msaaDefault: Int = 2
     static let msaaOptions: [Int] = [0, 2, 4, 8]
+    static let resDefault: Int = 4
+    static let resOptions: [Int] = [0, 1, 2, 3, 4]
 
     static func hudSize() -> Double { UserDefaults.standard.object(forKey: "VC_HUD_SIZE") as? Double ?? hudSizeDefault }
     static func msaa() -> Int { UserDefaults.standard.object(forKey: "VC_MSAA") as? Int ?? msaaDefault }
+    static func res() -> Int { UserDefaults.standard.object(forKey: "VC_RES") as? Int ?? resDefault }
+
+    /// Per-eye pixel dimensions for a VC_RES step, mirroring the ladder in visionos.cpp.
+    static func resLabel(_ step: Int) -> String {
+        switch step {
+        case 0:  return "1920×1080"
+        case 1:  return "2200×2100"
+        case 2:  return "2450×2350"
+        case 3:  return "2600×2500"
+        default: return "2720×2624"
+        }
+    }
 
     static func applyToEnvironment() {
         setenv("VC_HUD_SIZE", String(format: "%.3f", hudSize()), 1)
         setenv("VC_MSAA", String(msaa()), 1)
+        setenv("VC_RES", String(res()), 1)
     }
 }

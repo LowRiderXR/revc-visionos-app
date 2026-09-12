@@ -166,6 +166,16 @@ int vc_splash_active(void);
 /// 1 when verbose perf logging is enabled (env VC_PERF_LOG); gates host-side probes.
 int vc_perf_log(void);
 
+/// 1 once the game asked to quit (pause-menu Quit -> RsGlobal.quit). The game thread's
+/// loop exits on this, but on visionOS nothing closes the app/immersive space on its own,
+/// so the host polls this each frame and dismisses the immersive space when set.
+int vc_wants_quit(void);
+
+/// 1 while a save load is in progress (from confirmation until the world render resumes).
+/// The host draws a stable black instead of the frontend/loading screens, which otherwise
+/// flicker in stereo (confirm dialog + "please wait" + splash cycling through the buffers).
+int vc_loading_active(void);
+
 /// mach_absolute_time of the most recent head pose pushed via vc_set_view_matrix.
 /// The host reads this right after pushing so it can key its DeviceAnchor ring to the
 /// exact value that later arrives on a buffer as vc_ready_frame_t.pose_set_time.

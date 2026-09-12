@@ -259,6 +259,16 @@ actor Renderer {
     var lastHeadLogTime: Double = 0   // throttles the per-second M_head translation log
     var didLogHeadTracking = false
 
+    // Load-flicker diagnostics ([vc-host]): track menu/splash transitions and how many
+    // fresh game frames actually arrive (a repeated held frame = the flicker source).
+    var dbgLastMenu = -1
+    var dbgLastSplash = -1
+    var dbgFreshCount = 0
+    var dbgFrameCount = 0
+    var dbgSplashNilHud = 0     // splash path frames that had NO hud texture -> drew black (flicker)
+    var dbgEye1 = 0             // frames acquired as mono (eye_count=1)
+    var dbgEye2 = 0             // frames acquired as stereo (eye_count=2)
+
     // Last acquired game frame, held so a failed acquire re-shows it instead of
     // going black. The held buffer is never scheduled for release while current.
     var heldTexture: MTLTexture?
@@ -999,6 +1009,15 @@ actor Renderer {
             print("[vc-quad] drawable colorFormat rawValue=\(fmt.rawValue) isRGBA16Float=\(fmt == .rgba16Float)")
         }
 
+        // [vc-host] diagnostics: how many of the last 90 compositor frames got a FRESH
+        // game frame. A low number after a load means the game thread stopped publishing
+        // -> the host keeps re-showing the held (loading/menu) texture = the flicker.
+        dbgFrameCount += 1
+        if dbgFrameCount >= 90 {
+            print("[vc-host] last \(dbgFrameCount): fresh=\(dbgFreshCount) eye1=\(dbgEye1) eye2=\(dbgEye2) splashBlack=\(dbgSplashNilHud) (menu=\(vc_menu_active()) splash=\(vc_splash_active()))")
+            dbgFrameCount = 0; dbgFreshCount = 0; dbgEye1 = 0; dbgEye2 = 0; dbgSplashNilHud = 0
+        }
+
         // The game side may not have created the shared event yet at init time.
         if gameSharedEvent == nil, let evPtr = vc_get_shared_event() {
             gameSharedEvent = (Unmanaged<AnyObject>.fromOpaque(evPtr).takeUnretainedValue() as! MTLSharedEvent)
@@ -1006,6 +1025,8 @@ actor Renderer {
 
         var ready = vc_ready_frame_t()
         if vc_acquire_ready_frame(&ready), let texPtr = ready.texture {
+            dbgFreshCount += 1
+            if ready.eye_count >= 2 { dbgEye2 += 1 } else { dbgEye1 += 1 }
             // Got a fresh frame. Release the PREVIOUS held buffer once THIS
             // command buffer finishes: it runs in-order after every cb that
             // sampled the old texture, so the old one is guaranteed no longer in
@@ -1170,6 +1191,30 @@ actor Renderer {
             }
         }
 
+        // Save load in progress (mono frontend frames OR stereo): the confirm dialog,
+        // "please wait" message and splash cycle through the buffer ring and flicker in
+        // stereo. Show a stable BLACK for the whole load, regardless of eye_count, until
+        // the world render resumes (the game's fade-in then takes over). Checked BEFORE the
+        // eye_count branch because the loading frames are mono (eye_count=1).
+        if vc_loading_active() != 0 {
+            for drawable in drawables {
+                let rp = MTLRenderPassDescriptor()
+                rp.colorAttachments[0].texture = drawable.colorTextures[0]
+                rp.colorAttachments[0].loadAction = .clear
+                rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+                rp.colorAttachments[0].storeAction = .store
+                rp.rasterizationRateMap = drawable.rasterizationRateMaps.first
+                if layerRenderer.configuration.layout == .layered {
+                    rp.renderTargetArrayLength = drawable.views.count
+                }
+                if let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) {
+                    enc.label = "Load black"
+                    enc.endEncoding()
+                }
+            }
+            return
+        }
+
         // Stereo: slice per eye on a world-anchored screen projected per eye (the
         // ONLY display path that fuses -- a full-FOV blit can't, because the
         // compositor reprojects colorTextures[i] with its own off-axis
@@ -1192,12 +1237,21 @@ actor Renderer {
             // LoadingScreen put it) as a head-locked FULL-FOV quad at MENU depth and skip the
             // stale world -> clean splash, no 2D-over-3D crossfade, hard cut when it clears.
             let splashNow = vc_splash_active() != 0
+            // [vc-host] log menu/splash edges so we can see, after a load, whether splash
+            // stays stuck at 1 or toggles (flicker) and whether the menu really cleared.
+            let menuFlag = vc_menu_active()
+            if Int(menuFlag) != dbgLastMenu || (splashNow ? 1 : 0) != dbgLastSplash {
+                dbgLastMenu = Int(menuFlag)
+                dbgLastSplash = splashNow ? 1 : 0
+                print("[vc-host] edge: menu=\(dbgLastMenu) splash=\(dbgLastSplash) hold=\(splashHoldFrames) hasHud=\(heldHudTexture != nil)")
+            }
             if splashNow { splashHoldFrames = vcSplashHoldFrames }   // keep topped up during the splash
             if splashNow, let splash = heldHudTexture {
                 encodeGameHud(drawables: drawables, commandBuffer: commandBuffer,
                               texture: splash, quadOverride: splashScreenVertexBuffer)
                 return
             }
+            if splashNow && heldHudTexture == nil { dbgSplashNilHud += 1 }
             // Black hold: the suppressed world slices are STALE; the compositor may show a
             // buffered stale slice (old gameplay) for a frame or two before the fresh black
             // fade-in slices arrive -> a brief flash (a race). Clear to BLACK for a few frames
@@ -1613,6 +1667,13 @@ actor Renderer {
                 }
                 layerRenderer.waitUntilRunning()
                 continue
+            } else if vc_wants_quit() != 0 {
+                // Game asked to quit (pause-menu Quit -> RsGlobal.quit). There is no
+                // clean "resume from launcher" path (game singletons + ANGLE don't
+                // re-init in-process), so terminate: a fresh launch starts clean. The
+                // game thread has already unwound its own loop on RsGlobal.quit.
+                print("[vc-loop] quit requested -> terminating app")
+                exit(0)
             } else {
                 Task { @MainActor in
                     if appModel.immersiveSpaceState != .open {

@@ -18,6 +18,7 @@ struct ContentView: View {
     // GameSettings.applyToEnvironment() pushes them to the environment on start.
     @AppStorage("VC_HUD_SIZE") private var hudSize: Double = GameSettings.hudSizeDefault
     @AppStorage("VC_MSAA") private var msaa: Int = GameSettings.msaaDefault
+    @AppStorage("VC_RES") private var res: Int = GameSettings.resDefault
 
     var body: some View {
         VStack(spacing: 18) {
@@ -42,6 +43,23 @@ struct ContentView: View {
                     Picker("MSAA", selection: $msaa) {
                         ForEach(GameSettings.msaaOptions, id: \.self) { n in
                             Text(n == 0 ? "Aus" : "\(n)×").tag(n)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
+                // Auflösung pro Auge (VC_RES-Stufe)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Auflösung/Auge")
+                        Spacer()
+                        Text(GameSettings.resLabel(res))
+                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Picker("Auflösung", selection: $res) {
+                        ForEach(GameSettings.resOptions, id: \.self) { n in
+                            Text("\(n)").tag(n)
                         }
                     }
                     .pickerStyle(.segmented)
