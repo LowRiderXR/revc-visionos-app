@@ -43,10 +43,10 @@ enum GameAudioSession {
             print("[vc-audio-swift] spatial experience FAILED (system default in effect): \(error)")
         }
 
-        // DIAGNOSE: watch what ends the audio. When the 2D window closes we expect
-        // to see either an interruption (began) or a route change here, with the
-        // reason — that tells us WHAT stops playback, since openal-soft itself
-        // never touches the session.
+        // Keep audio alive across AVAudioSession interruptions (headset off/on): the
+        // monitor pauses OpenAL on .began and reactivates the session + resets the
+        // OpenAL backend on .ended. Without the reset, sound stays dead after re-donning
+        // even though the session comes back fine (openal-soft's AudioUnit stays stopped).
         AudioSessionMonitor.shared.start()
     }
 }

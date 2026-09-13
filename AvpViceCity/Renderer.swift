@@ -1627,11 +1627,12 @@ actor Renderer {
     func renderLoop() {
         while true {
             if layerRenderer.state == .invalidated {
-                print("Layer is invalidated")
-                Task { @MainActor in
-                    appModel.immersiveSpaceState = .closed
-                }
-                return
+                // Digital Crown / immersive space dismissed. Same as the quit path below:
+                // there is no clean in-process re-open (game singletons + ANGLE don't
+                // re-init), so re-entering from the launcher would just render black.
+                // Terminate instead -- a fresh launch starts clean.
+                print("[vc-loop] layer invalidated (Digital Crown) -> terminating app")
+                exit(0)
             } else if layerRenderer.state == .paused {
                 Task { @MainActor in
                     appModel.immersiveSpaceState = .inTransition
