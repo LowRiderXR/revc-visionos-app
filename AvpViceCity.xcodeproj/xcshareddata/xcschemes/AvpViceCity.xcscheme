@@ -295,10 +295,25 @@
          <EnvironmentVariable
             key = "VC_CULL_BBLOG"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_CULL_NOOCCLUDE"
+            value = "1"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_AIM_HEADPOSE"
+            value = "1"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_AIM_LOG"
+            value = "1"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_AIM_SENSITIVITY"
             value = "1"
             isEnabled = "YES">
          </EnvironmentVariable>
