@@ -171,6 +171,12 @@ int vc_perf_log(void);
 /// so the host polls this each frame and dismisses the immersive space when set.
 int vc_wants_quit(void);
 
+/// Nudge OpenAL across an AVAudioSession interruption. began=1 pauses the device; began=0
+/// resumes + resets the backend so its output AudioUnit restarts (reactivating the session
+/// alone leaves it stopped -> silent after the headset is re-donned). Safe to call from the
+/// notification thread. No-op before the OpenAL device is open.
+void vc_audio_interruption(int began);
+
 /// 1 while a save load is in progress (from confirmation until the world render resumes).
 /// The host draws a stable black instead of the frontend/loading screens, which otherwise
 /// flicker in stereo (confirm dialog + "please wait" + splash cycling through the buffers).

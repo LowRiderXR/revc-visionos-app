@@ -77,16 +77,20 @@ final class AudioSessionMonitor: NSObject, @unchecked Sendable {
         }
         print("[vc-audio-swift] INTERRUPTION type=\(typeStr)\(reasonStr) at \(Date())")
 
-        // If the system ever ends the interruption, re-activate so playback can
-        // resume (RemoteIO stays bound to this session). Costs nothing when no
-        // .ended arrives; catches the case where it comes later.
-        if type == .ended {
+        if type == .began {
+            // Pause OpenAL's device so it stops driving the (about to be torn down) unit.
+            vc_audio_interruption(1)
+        } else if type == .ended {
+            // Reactivate the session, THEN nudge OpenAL. Measured: the session comes back
+            // fine (.playback/[Speaker]) but openal-soft's output AudioUnit stays stopped,
+            // so this reset is what actually restores sound after the headset is re-donned.
             do {
                 try AVAudioSession.sharedInstance().setActive(true)
                 print("[vc-audio-swift] reactivate after .ended: OK")
             } catch {
                 print("[vc-audio-swift] reactivate after .ended: FAILED \(error)")
             }
+            vc_audio_interruption(0)
         }
     }
 
