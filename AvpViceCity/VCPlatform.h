@@ -138,15 +138,15 @@ typedef struct vc_gamepad_t {
 void vc_set_gamepad_state(const vc_gamepad_t *state);
 
 // ---------------------------------------------------------------------------
-// Render mode (cinema vs stereo). Read once from VC_RENDER_MODE at startup,
-// default cinema. This is the EFFECTIVE mode: while stereo is unimplemented it
-// falls back to cinema, so vc_render_mode() reports cinema even if stereo was
-// requested. The value lives in a mutable global (no compile-time bake-in), so a
-// later runtime switch is not precluded. reVC mirrors this enum -- keep in sync.
+// Render mode (cinema vs stereo). Read once from VC_RENDER_MODE at startup:
+// default STEREO; only VC_RENDER_MODE=cinema selects the single flat cinema
+// screen (comparison/cutscene fallback). The value lives in a mutable global
+// (no compile-time bake-in), so a later runtime switch is not precluded. reVC
+// mirrors this enum -- keep in sync.
 // ---------------------------------------------------------------------------
 typedef enum vc_render_mode_t {
     VC_MODE_CINEMA = 0,   ///< single flat render target on a world-anchored quad
-    VC_MODE_STEREO = 1,   ///< per-eye render (not implemented yet -> cinema)
+    VC_MODE_STEREO = 1,   ///< per-eye stereo render (default)
 } vc_render_mode_t;
 
 /// The active (effective) render mode. Readable from both reVC and Swift.

@@ -19,6 +19,7 @@ struct ContentView: View {
     @AppStorage("VC_HUD_SIZE") private var hudSize: Double = GameSettings.hudSizeDefault
     @AppStorage("VC_MSAA") private var msaa: Int = GameSettings.msaaDefault
     @AppStorage("VC_RES") private var res: Int = GameSettings.resDefault
+    @AppStorage("VC_AIM_SENSITIVITY") private var aimSensitivity: Double = GameSettings.aimSensitivityDefault
 
     var body: some View {
         VStack(spacing: 18) {
@@ -64,6 +65,17 @@ struct ContentView: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                }
+
+                // Ziel-Empfindlichkeit (rechter Stick)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Ziel-Empfindlichkeit")
+                        Spacer()
+                        Text(String(format: "%.2f×", aimSensitivity))
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Slider(value: $aimSensitivity, in: 0.1...2.0, step: 0.05)
                 }
             }
             .padding(12)
