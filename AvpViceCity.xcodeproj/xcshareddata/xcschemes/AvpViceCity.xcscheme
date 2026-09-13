@@ -275,7 +275,7 @@
          <EnvironmentVariable
             key = "VC_FOVEATE"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_FOVEATE_EDGE"
@@ -285,7 +285,7 @@
          <EnvironmentVariable
             key = "VC_CULL_HEADPOSE"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_CULL_MARGIN"
@@ -300,7 +300,17 @@
          <EnvironmentVariable
             key = "VC_AIM_SENSITIVITY"
             value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_AIM_LOG"
+            value = "1"
             isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_AIM_1P_PITCH"
+            value = "5"
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
