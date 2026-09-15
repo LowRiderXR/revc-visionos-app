@@ -74,6 +74,19 @@ nonisolated let vcReprojFix: Bool = {
     ProcessInfo.processInfo.environment["VC_REPROJ_FIX"] != "0"
 }()
 
+// VC_STEREO_LOG=1: host-side reprojection probe. Logs when the render-pose anchor match
+// falls back from an EXACT pose_set_time hit to the nearest ring entry (stale anchor) --
+// the suspected cause of the stereo divergence when the frame rate jumps (e.g. walking
+// through an interior door: ~54 -> ~90 fps changes the buffer cadence).
+nonisolated let vcStereoLog: Bool = {
+    ProcessInfo.processInfo.environment["VC_STEREO_LOG"] == "1"
+}()
+nonisolated let vcMachToMs: Double = {
+    var tb = mach_timebase_info_data_t()
+    mach_timebase_info(&tb)
+    return Double(tb.numer) / Double(tb.denom) / 1.0e6
+}()
+
 // After a splash ends, the world slices were SUPPRESSED (stale = old gameplay); the compositor
 // may show a buffered stale slice for a frame or two before the fresh black fade-in slices
 // arrive -> a brief gameplay flash (a race, "not every time"). Hold BLACK for this many frames
@@ -1036,6 +1049,13 @@ actor Renderer {
                 } else if let near = renderAnchorRing.min(by: {
                     ($0.key > t ? $0.key - t : t - $0.key) < ($1.key > t ? $1.key - t : t - $1.key) }) {
                     heldRenderAnchor = near.anchor
+                    if vcStereoLog {
+                        let d = near.key > t ? near.key - t : t - near.key
+                        print(String(format: "[vc-reproj] FALLBACK: no exact pose_set_time match, using nearest anchor deltaMs=%.1f ringCount=%d",
+                                     Double(d) * vcMachToMs, renderAnchorRing.count))
+                    }
+                } else if vcStereoLog {
+                    print("[vc-reproj] FALLBACK: ring empty, no anchor for pose_set_time (reprojecting from current pose)")
                 }
             }
 

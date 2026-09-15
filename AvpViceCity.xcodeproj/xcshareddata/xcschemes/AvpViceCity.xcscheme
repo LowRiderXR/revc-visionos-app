@@ -204,7 +204,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_REPROJ_FIX"
-            value = "1"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -234,7 +234,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MSAA"
-            value = "4"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -284,7 +284,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_CULL_HEADPOSE"
-            value = "1"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -305,12 +305,47 @@
          <EnvironmentVariable
             key = "VC_AIM_LOG"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_AIM_1P_PITCH"
             value = "5"
             isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_LOG"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_EYE_DEPTH_SPLIT"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_EYE_SLICE_SWAP"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_EYE_FORCE0"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DRAW_LOG"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_EYE_DEPTH_SPLIT"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_ZFIX"
+            value = "1"
+            isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
