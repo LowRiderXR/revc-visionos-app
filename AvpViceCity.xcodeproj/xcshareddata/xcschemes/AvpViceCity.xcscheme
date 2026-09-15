@@ -345,6 +345,11 @@
          <EnvironmentVariable
             key = "VC_STEREO_ZFIX"
             value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_ALPHA_LOG"
+            value = "1"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
