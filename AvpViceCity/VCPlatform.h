@@ -166,6 +166,13 @@ int vc_splash_active(void);
 /// 1 when verbose perf logging is enabled (env VC_PERF_LOG); gates host-side probes.
 int vc_perf_log(void);
 
+/// 1 when reVC scales its 2D layout (menu/HUD) with the 4:3 DESIGN aspect instead of the
+/// physical buffer aspect (env VC_HUD_ASPECT, default on, stereo only). The near-square
+/// buffer from VC_RES=2 up would otherwise push the 640-wide design off the right edge.
+/// The layout then fills the whole overlay texture but is horizontally squeezed, so the
+/// host MUST draw the HUD/menu quad at 4:3 (not at the texture aspect) to undo it.
+int vc_hud_aspect_fixed(void);
+
 /// 1 once the game asked to quit (pause-menu Quit -> RsGlobal.quit). The game thread's
 /// loop exits on this, but on visionOS nothing closes the app/immersive space on its own,
 /// so the host polls this each frame and dismisses the immersive space when set.

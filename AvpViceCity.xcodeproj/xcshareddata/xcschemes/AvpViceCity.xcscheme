@@ -350,6 +350,16 @@
          <EnvironmentVariable
             key = "VC_ALPHA_LOG"
             value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MAP_LEGEND"
+            value = "100"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MAP_LEGEND_SCALE"
+            value = "0.6"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

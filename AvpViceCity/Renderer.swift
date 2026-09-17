@@ -1073,6 +1073,17 @@ actor Renderer {
             // half-extents are D/p0 x D/p5. p0/p5 are ~equal per eye (only the
             // off-centre term differs), so eye 0 is representative.
             let aspect = ready.height > 0 ? Float(ready.width) / Float(ready.height) : 1.0
+            // Overlay (HUD/menu) aspect. When reVC pins its 2D layout to the 4:3 DESIGN
+            // aspect (vc_hud_aspect_fixed -- needed because the near-square buffer from
+            // VC_RES=2 up otherwise pushes the 640-wide menu design off the right edge),
+            // the layout fills the WHOLE overlay texture but comes out horizontally
+            // squeezed by (4:3)/textureAspect. A 4:3 quad undoes exactly that, at full
+            // texture resolution -- which is why we squeeze in the texture instead of
+            // shrinking the buffer to 16:9 (that would cost 40-60% of the pixels per
+            // glyph). With the fix off the layout is AR-corrected for the texture aspect,
+            // so the quad keeps the texture aspect. Not applied to the world quad or the
+            // splash: the splash is drawn fullscreen (no SCREEN_SCALE_AR) and stays full-FOV.
+            let overlayAspect: Float = vc_hud_aspect_fixed() != 0 ? (4.0 / 3.0) : aspect
             if ready.eye_count >= 2 {
                 if stereoScreenVertexBuffer == nil || stereoScreenAspect != aspect {
                     let proj = drawables.first?.computeProjection(viewIndex: 0) ?? matrix_identity_float4x4
@@ -1096,35 +1107,35 @@ actor Renderer {
                 // HUD texture's own aspect so it isn't stretched. Rebuilt on aspect
                 // change. Separate from the world quad: the HUD is a flat 2D image, so
                 // it belongs at a comfortable reading depth, not pushed to infinity.
-                if hudQuadVertexBuffer == nil || hudQuadAspect != aspect {
+                if hudQuadVertexBuffer == nil || hudQuadAspect != overlayAspect {
                     let proj = drawables.first?.computeProjection(viewIndex: 0) ?? matrix_identity_float4x4
                     let p5 = proj.columns.1.y
                     let fullHalfH = (p5 != 0) ? vcHudDepth / p5 : vcHudDepth
                     let hh = vcHudSize * fullHalfH
-                    let hw = hh * aspect
+                    let hw = hh * overlayAspect
                     let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh,
                                                  distance: vcHudDepth, centerY: 0.0)
                     hudQuadVertexBuffer = verts.withUnsafeBytes {
                         device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
                     }
                     hudQuadVertexBuffer?.label = "HudQuadVertices"
-                    hudQuadAspect = aspect
+                    hudQuadAspect = overlayAspect
                 }
                 // Menu panel quad: same construction but at vcMenuDepth / vcMenuSize.
                 // Drawn world-anchored (frozen pose) while the pause menu is up.
-                if menuQuadVertexBuffer == nil || menuQuadAspect != aspect {
+                if menuQuadVertexBuffer == nil || menuQuadAspect != overlayAspect {
                     let proj = drawables.first?.computeProjection(viewIndex: 0) ?? matrix_identity_float4x4
                     let p5 = proj.columns.1.y
                     let fullHalfH = (p5 != 0) ? vcMenuDepth / p5 : vcMenuDepth
                     let hh = vcMenuSize * fullHalfH
-                    let hw = hh * aspect
+                    let hw = hh * overlayAspect
                     let verts = gameQuadVertices(halfWidth: hw, halfHeight: hh,
                                                  distance: vcMenuDepth, centerY: 0.0)
                     menuQuadVertexBuffer = verts.withUnsafeBytes {
                         device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: [.storageModeShared])
                     }
                     menuQuadVertexBuffer?.label = "MenuQuadVertices"
-                    menuQuadAspect = aspect
+                    menuQuadAspect = overlayAspect
                 }
                 // Splash quad: FULL FOV (like the world screen) but at the MENU depth, so
                 // the loading/title splash sits at the same distance as the menu -> no depth
