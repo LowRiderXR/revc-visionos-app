@@ -190,7 +190,7 @@
          <EnvironmentVariable
             key = "VC_PERF_LOG"
             value = "1"
-            isEnabled = "NO">
+            isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_CAP_FACTOR"
@@ -274,7 +274,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_FOVEATE"
-            value = "1"
+            value = "0"
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -360,6 +360,61 @@
          <EnvironmentVariable
             key = "VC_MAP_LEGEND_SCALE"
             value = "0.6"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_RADAR_FILTER"
+            value = "nearest"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DROPLETS"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_CULL_HEADPOSE"
+            value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DRAW_PROFILE"
+            value = "1"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MSAA_SPLIT"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_DEPTH_SPLIT"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_WEATHER"
+            value = "2"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "KL_ANGLE_VRR_TRACE"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_ALPHA_TRACE"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "KL_MTL_BUFFER_GC_MB"
+            value = "64"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "KL_MTL_GC_DEFER"
+            value = "0"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
