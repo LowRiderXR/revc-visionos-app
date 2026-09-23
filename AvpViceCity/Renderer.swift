@@ -358,14 +358,19 @@ actor Renderer {
         worldTracking = WorldTrackingProvider()
         print("[vc-stats] VC_DEBUG_STATS \(vcDebugStats ? "ENABLED" : "disabled"), budget=\(vcFrameBudgetMs) ms")
         Self.logMultiviewCaps(device: device)
-        // VC_MV_SPIKE=1 -> isolation matrix + full Stufe-1 bar test;
-        // VC_MV_SPIKE=2 -> isolation matrix only.
+        // VC_MV_SPIKE=1 -> isolation matrix + full Stufe-1 bar test (amplification);
+        // VC_MV_SPIKE=2 -> isolation matrix only;
+        // VC_MV_SPIKE=3 -> instanced layer-routing test (ANGLE's multiview
+        //                  emulation pattern: render_target_array_index from
+        //                  instance_id, shared V curve) — the stage-3 gate.
         let spikeMode = ProcessInfo.processInfo.environment["VC_MV_SPIKE"]
         if spikeMode == "1" || spikeMode == "2" {
             MultiviewSpike.isolationTest(device: device)
             if spikeMode == "1" {
                 MultiviewSpike.run(device: device)
             }
+        } else if spikeMode == "3" {
+            MultiviewSpike.runInstanced(device: device)
         }
     }
 

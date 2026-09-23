@@ -53,15 +53,29 @@ enum MultiviewSpike {
     ]
 
     static func run(device: MTLDevice) {
-        print("[mv-spike] start: screen=\(screen)x\(screen) zones=\(zones)x\(zones)"
+        runSpike(device: device, instanced: false)
+    }
+
+    /// The stage-3 gate test: same bar verification as stage 1, but the layer
+    /// routing is ANGLE's multiview emulation — instanceCount 2, view =
+    /// instance_id % 2, [[render_target_array_index]] from the vertex shader,
+    /// NO vertex amplification. Rate map follows the measured rule: one
+    /// SHARED vertical curve across both layers, horizontal per layer
+    /// (layer 0 uniform, layer 1 falloff), so both axes must foveate.
+    static func runInstanced(device: MTLDevice) {
+        runSpike(device: device, instanced: true)
+    }
+
+    private static func runSpike(device: MTLDevice, instanced: Bool) {
+        print("[mv-spike] start: mode=\(instanced ? "instanced-rt-index" : "amplification")"
+              + " screen=\(screen)x\(screen) zones=\(zones)x\(zones)"
               + " samples=\(sampleCount) shift=\(layerShift) tolerance=\(tolerance)px")
 
-        // --- Rate map: layer 0 uniform 1.0 (control), layer 1 strong falloff.
-        guard let map = makeTwoLayerMap(device: device) else {
+        guard let map = makeTwoLayerMap(device: device, instanced: instanced) else {
             print("[mv-spike] RESULT=FAIL stage=map (makeRasterizationRateMap returned nil)")
             return
         }
-        logMapGeometry(map)
+        logMapGeometry(map, instanced: instanced)
 
         // --- Textures: memoryless MS array + private resolve array + memoryless depth.
         let msDesc = MTLTextureDescriptor()
@@ -102,19 +116,25 @@ enum MultiviewSpike {
 
         // --- Pipeline.
         guard let library = device.makeDefaultLibrary(),
-              let vfn = library.makeFunction(name: "mv_spike_vertex"),
-              let ffn = library.makeFunction(name: "mv_spike_fragment") else {
+              let vfn = library.makeFunction(name: instanced ? "mv_spike_inst_vertex" : "mv_spike_vertex"),
+              let ffn = library.makeFunction(name: instanced ? "mv_spike_inst_fragment" : "mv_spike_fragment") else {
             print("[mv-spike] RESULT=FAIL stage=library (spike shaders missing)")
             return
         }
         let pipeDesc = MTLRenderPipelineDescriptor()
-        pipeDesc.label = "mv-spike"
+        pipeDesc.label = instanced ? "mv-spike-inst" : "mv-spike"
         pipeDesc.vertexFunction = vfn
         pipeDesc.fragmentFunction = ffn
         pipeDesc.colorAttachments[0].pixelFormat = .rgba8Unorm
         pipeDesc.depthAttachmentPixelFormat = .depth32Float
         pipeDesc.rasterSampleCount = sampleCount
-        pipeDesc.maxVertexAmplificationCount = 2
+        if instanced {
+            // Layered rendering via [[render_target_array_index]]: the pipeline
+            // must know the topology up front; no amplification is configured.
+            pipeDesc.inputPrimitiveTopology = .triangle
+        } else {
+            pipeDesc.maxVertexAmplificationCount = 2
+        }
         let pipeline: MTLRenderPipelineState
         do {
             pipeline = try device.makeRenderPipelineState(descriptor: pipeDesc)
@@ -171,18 +191,26 @@ enum MultiviewSpike {
         encoder.setViewport(MTLViewport(originX: 0, originY: 0,
                                         width: Double(screen), height: Double(screen),
                                         znear: 0, zfar: 1))
-        var viewMappings = [
-            MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: 0, renderTargetArrayIndexOffset: 0),
-            MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: 0, renderTargetArrayIndexOffset: 1),
-        ]
-        encoder.setVertexAmplificationCount(2, viewMappings: &viewMappings)
+        if !instanced {
+            var viewMappings = [
+                MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: 0, renderTargetArrayIndexOffset: 0),
+                MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: 0, renderTargetArrayIndexOffset: 1),
+            ]
+            encoder.setVertexAmplificationCount(2, viewMappings: &viewMappings)
+        }
         encoder.setRenderPipelineState(pipeline)
         encoder.setDepthStencilState(depthState)
         encoder.setCullMode(.none)
         encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         var params = SIMD4<Float>(Float(screen), Float(screen), layerShift, layerShift)
         encoder.setVertexBytes(&params, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+        if instanced {
+            // ANGLE's emulation doubles the instances; view = instance_id % 2.
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount,
+                                   instanceCount: 2)
+        } else {
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+        }
         encoder.endEncoding()
 
         guard let blit = cb.makeBlitCommandEncoder() else {
@@ -382,17 +410,30 @@ enum MultiviewSpike {
 
     // MARK: - Rate map
 
-    private static func makeTwoLayerMap(device: MTLDevice) -> MTLRasterizationRateMap? {
+    private static func makeTwoLayerMap(device: MTLDevice,
+                                        instanced: Bool) -> MTLRasterizationRateMap? {
         let layer0 = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSizeMake(zones, zones, 0))
         let layer1 = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSizeMake(zones, zones, 0))
         for i in 0..<zones {
             // Distance from grid center, 0 at the middle, 1 at the edges.
             let d = abs(Float(i) - Float(zones - 1) / 2) / (Float(zones - 1) / 2)
             let rate = 1.0 - 0.75 * d   // 1.0 center -> 0.25 edge
-            layer0.horizontal[i] = 1.0
-            layer0.vertical[i] = 1.0
-            layer1.horizontal[i] = rate
-            layer1.vertical[i] = rate
+            if instanced {
+                // The measured rule (see plattformwissen): vertical must be ONE
+                // shared curve across layers or Metal silently drops it.
+                // Horizontal stays per-layer: layer 0 uniform, layer 1 falloff,
+                // so the two slices are distinguishable on both axes.
+                layer0.horizontal[i] = 1.0
+                layer1.horizontal[i] = rate
+                layer0.vertical[i] = rate
+                layer1.vertical[i] = rate
+            } else {
+                // Stage-1 shape, kept verbatim for regression comparability.
+                layer0.horizontal[i] = 1.0
+                layer0.vertical[i] = 1.0
+                layer1.horizontal[i] = rate
+                layer1.vertical[i] = rate
+            }
         }
         let desc = MTLRasterizationRateMapDescriptor()
         desc.screenSize = MTLSizeMake(screen, screen, 0)
@@ -402,22 +443,31 @@ enum MultiviewSpike {
         return device.makeRasterizationRateMap(descriptor: desc)
     }
 
-    private static func logMapGeometry(_ map: MTLRasterizationRateMap) {
+    private static func logMapGeometry(_ map: MTLRasterizationRateMap, instanced: Bool) {
         // Side quest (Stufe-0 curiosity): compare each axis's reported physical
         // size against the integral of the rates, to see whether width and
         // height quantize differently.
+        var falloffSum: Float = 0
+        for i in 0..<zones {
+            let d = abs(Float(i) - Float(zones - 1) / 2) / (Float(zones - 1) / 2)
+            falloffSum += 1.0 - 0.75 * d
+        }
+        let falloffInt = Int((falloffSum / Float(zones) * Float(screen)).rounded())
         for layer in 0..<2 {
             let p = map.physicalSize(layer: layer)
-            var sum: Float = 0
-            for i in 0..<zones {
-                let d = abs(Float(i) - Float(zones - 1) / 2) / (Float(zones - 1) / 2)
-                sum += layer == 0 ? 1.0 : 1.0 - 0.75 * d
+            let expectH: Int
+            let expectV: Int
+            if instanced {
+                expectH = layer == 0 ? screen : falloffInt
+                expectV = falloffInt
+            } else {
+                expectH = layer == 0 ? screen : falloffInt
+                expectV = layer == 0 ? screen : falloffInt
             }
-            let integral = sum / Float(zones) * Float(screen)
             let corner = map.physicalCoordinates(
                 screenCoordinates: MTLCoordinate2DMake(Float(screen), Float(screen)), layer: layer)
             print("[mv-spike] map layer=\(layer) physicalSize=\(p.width)x\(p.height)"
-                  + " rateIntegral=\(Int(integral.rounded())) (both axes, same curve)"
+                  + " rateIntegral=\(expectH)x\(expectV)"
                   + " farCorner=\(corner.x)x\(corner.y)"
                   + " granularity=\(map.physicalGranularity.width)x\(map.physicalGranularity.height)")
         }
