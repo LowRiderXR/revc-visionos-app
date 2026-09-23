@@ -357,6 +357,72 @@ actor Renderer {
 
         worldTracking = WorldTrackingProvider()
         print("[vc-stats] VC_DEBUG_STATS \(vcDebugStats ? "ENABLED" : "disabled"), budget=\(vcFrameBudgetMs) ms")
+        Self.logMultiviewCaps(device: device)
+        // VC_MV_SPIKE=1 -> isolation matrix + full Stufe-1 bar test;
+        // VC_MV_SPIKE=2 -> isolation matrix only.
+        let spikeMode = ProcessInfo.processInfo.environment["VC_MV_SPIKE"]
+        if spikeMode == "1" || spikeMode == "2" {
+            MultiviewSpike.isolationTest(device: device)
+            if spikeMode == "1" {
+                MultiviewSpike.run(device: device)
+            }
+        }
+    }
+
+    // Multiview plan, Stufe 0: pure capability queries, no render-path changes.
+    // Logged once at startup; filter the Xcode console for "mv-caps".
+    private static func logMultiviewCaps(device: MTLDevice) {
+        let families: [(String, MTLGPUFamily)] = [
+            ("apple5", .apple5), ("apple6", .apple6), ("apple7", .apple7),
+            ("apple8", .apple8), ("apple9", .apple9), ("metal3", .metal3),
+        ]
+        let supported = families.filter { device.supportsFamily($0.1) }.map { $0.0 }
+        print("[mv-caps] device=\(device.name) families=\(supported.joined(separator: ","))")
+
+        // Counts <= 1 trigger an API validation error per the docs, so probing
+        // starts at 2. maxAmp stays 1 if amplification is entirely unsupported.
+        var maxAmp = 1
+        for count in 2...16 where device.supportsVertexAmplificationCount(count) {
+            maxAmp = count
+        }
+        print("[mv-caps] maxVertexAmplificationCount=\(maxAmp)")
+
+        var maxRateMapLayers = 0
+        for layers in 1...16 where device.supportsRasterizationRateMap(layerCount: layers) {
+            maxRateMapLayers = layers
+        }
+        print("[mv-caps] rasterizationRateMap maxLayerCount=\(maxRateMapLayers)")
+
+        // Self-built two-layer map: layer 0 uniform 1.0, layer 1 with an edge
+        // falloff. Different physical sizes per layer prove the layers are
+        // honored independently — creation alone doesn't prove rendering works
+        // (that's Stufe 1), but a nil here would kill the plan early.
+        let zones = 8
+        let layer0 = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSizeMake(zones, zones, 0))
+        let layer1 = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSizeMake(zones, zones, 0))
+        for i in 0..<zones {
+            let edge = min(Float(i), Float(zones - 1 - i)) / Float(zones / 2)
+            let rate = max(0.3, min(1.0, 0.3 + edge))
+            layer0.horizontal[i] = 1.0
+            layer0.vertical[i] = 1.0
+            layer1.horizontal[i] = rate
+            layer1.vertical[i] = rate
+        }
+        let desc = MTLRasterizationRateMapDescriptor()
+        desc.screenSize = MTLSizeMake(2048, 2048, 0)
+        desc.setLayer(layer0, at: 0)
+        desc.setLayer(layer1, at: 1)
+        desc.label = "mv-caps two-layer probe"
+        if let map = device.makeRasterizationRateMap(descriptor: desc) {
+            let p0 = map.physicalSize(layer: 0)
+            let p1 = map.physicalSize(layer: 1)
+            let g = map.physicalGranularity
+            print("[mv-caps] twoLayerMap=OK layerCount=\(map.layerCount) screen=2048x2048"
+                  + " phys0=\(p0.width)x\(p0.height) phys1=\(p1.width)x\(p1.height)"
+                  + " granularity=\(g.width)x\(g.height)")
+        } else {
+            print("[mv-caps] twoLayerMap=FAILED (makeRasterizationRateMap returned nil)")
+        }
     }
 
     private func startARSession(_ arSession: ARKitSession) async {
@@ -597,6 +663,18 @@ actor Renderer {
                 let phys = rm.physicalSize(layer: 0)
                 let scr = rm.screenSize
                 print("[vc-rq] rateMap physical=\(phys.width)x\(phys.height) screen=\(scr.width)x\(scr.height) drawableTex=\(tex.width)x\(tex.height)")
+                // Multiview plan, Stufe 0: what the compositor's own rate map
+                // reports about layering — the reference our self-built map
+                // must match.
+                let perLayer = (0..<rm.layerCount)
+                    .map { rm.physicalSize(layer: $0) }
+                    .map { "\($0.width)x\($0.height)" }
+                    .joined(separator: ",")
+                print("[mv-caps] compositorMap layerCount=\(rm.layerCount)"
+                      + " maps=\(drawables[0].rasterizationRateMaps.count)"
+                      + " views=\(drawables[0].views.count)"
+                      + " physPerLayer=\(perLayer)"
+                      + " texArrayLength=\(tex.arrayLength) texType=\(tex.textureType.rawValue)")
             } else {
                 print("[vc-rq] (no rate map) drawableTex=\(tex.width)x\(tex.height)")
             }

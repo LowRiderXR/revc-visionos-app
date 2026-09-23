@@ -85,7 +85,7 @@
          <EnvironmentVariable
             key = "VC_RENDER_MODE"
             value = "stereo"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MATRIX_TEST"
@@ -190,7 +190,7 @@
          <EnvironmentVariable
             key = "VC_PERF_LOG"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_CAP_FACTOR"
@@ -380,7 +380,7 @@
          <EnvironmentVariable
             key = "VC_DRAW_PROFILE"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MSAA_SPLIT"
@@ -415,6 +415,16 @@
          <EnvironmentVariable
             key = "KL_MTL_GC_DEFER"
             value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_MV_SPIKE"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "KL_GL_MULTIVIEW"
+            value = "1"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
