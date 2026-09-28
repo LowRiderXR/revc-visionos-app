@@ -20,6 +20,7 @@ struct ContentView: View {
     @AppStorage("VC_MSAA") private var msaa: Int = GameSettings.msaaDefault
     @AppStorage("VC_RES") private var res: Int = GameSettings.resDefault
     @AppStorage("VC_AIM_SENSITIVITY") private var aimSensitivity: Double = GameSettings.aimSensitivityDefault
+    @AppStorage("VC_MULTIVIEW") private var multiview: Bool = GameSettings.multiviewDefault
 
     var body: some View {
         VStack(spacing: 18) {
@@ -65,6 +66,13 @@ struct ContentView: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                }
+
+                // Ein-Pass-Rendering (OVR_multiview): beide Augen in einem Weltpass.
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Ein-Pass-Rendering (Multiview)", isOn: $multiview)
+                    Text("Beide Augen in einem Durchlauf: halbe CPU-Last, konstantere Bildrate. Experimentell.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 // Ziel-Empfindlichkeit (rechter Stick)

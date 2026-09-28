@@ -35,6 +35,11 @@ enum GameSettings {
     static let resDefault: Int = 4
     static let resOptions: [Int] = [0, 1, 2, 3, 4]
     static let aimSensitivityDefault: Double = 1.0
+    /// One-pass stereo (OVR_multiview): both eyes in one world pass. Default OFF until the
+    /// long play session (multiview-plan.md, Stufe 6 / Launcher) is clean. nil = never set in
+    /// the launcher -> the scheme environment (VC_MULTIVIEW / KL_GL_MULTIVIEW) decides.
+    static let multiviewDefault: Bool = false
+    static func multiviewSetting() -> Bool? { UserDefaults.standard.object(forKey: "VC_MULTIVIEW") as? Bool }
 
     static func hudSize() -> Double { UserDefaults.standard.object(forKey: "VC_HUD_SIZE") as? Double ?? hudSizeDefault }
     static func msaa() -> Int { UserDefaults.standard.object(forKey: "VC_MSAA") as? Int ?? msaaDefault }
@@ -57,5 +62,13 @@ enum GameSettings {
         setenv("VC_MSAA", String(msaa()), 1)
         setenv("VC_RES", String(res()), 1)
         setenv("VC_AIM_SENSITIVITY", String(format: "%.2f", aimSensitivity()), 1)
+        // Multiview: only when the launcher toggle has been touched; otherwise leave the
+        // scheme environment alone (developer runs set VC_MULTIVIEW/KL_GL_MULTIVIEW there).
+        // KL_GL_MULTIVIEW makes ANGLE advertise GL_OVR_multiview; it is read at EGL display
+        // creation, which happens after this call (immersive space -> game start).
+        if let mv = multiviewSetting() {
+            setenv("VC_MULTIVIEW", mv ? "1" : "0", 1)
+            if mv { setenv("KL_GL_MULTIVIEW", "1", 1) }
+        }
     }
 }
