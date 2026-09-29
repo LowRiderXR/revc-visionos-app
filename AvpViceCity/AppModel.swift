@@ -85,6 +85,9 @@ enum GameSettings {
         // GL_OVR_multiview; it is read at EGL display creation, which happens after this
         // call (immersive space -> game start). OFF removes it so the mono path sees the
         // same GL as before the whole multiview work.
+        // Device class for the game side (Frontend.cpp: draw-distance slider ceiling/default,
+        // island-loading default). 1 = M2 class (assumed values), 0 = M5 or newer (measured).
+        setenv("VC_DEVICE_M2", isM2Device ? "1" : "0", 1)
         let mv = multiview()
         setenv("VC_MULTIVIEW", mv ? "1" : "0", 1)
         if mv { setenv("KL_GL_MULTIVIEW", "1", 1) } else { unsetenv("KL_GL_MULTIVIEW") }

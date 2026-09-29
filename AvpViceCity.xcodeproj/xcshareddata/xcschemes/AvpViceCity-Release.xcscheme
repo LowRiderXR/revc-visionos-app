@@ -31,7 +31,7 @@
       shouldAutocreateTestPlan = "YES">
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Debug"
+      buildConfiguration = "Release"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -396,7 +396,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_WEATHER"
-            value = "4"
+            value = "0"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -476,12 +476,12 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_LOD_SCALE"
-            value = "1.8"
+            value = "2.2"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_ISLAND_LOADING"
-            value = "1"
+            value = "2"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
