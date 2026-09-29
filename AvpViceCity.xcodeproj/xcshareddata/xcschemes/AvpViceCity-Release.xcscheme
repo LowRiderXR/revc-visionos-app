@@ -272,7 +272,7 @@
          <EnvironmentVariable
             key = "VC_EYE_GPU"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_FOVEATE"
@@ -467,7 +467,7 @@
          <EnvironmentVariable
             key = "VC_LOD_LOG"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_FOG_RADIAL"
@@ -477,12 +477,12 @@
          <EnvironmentVariable
             key = "VC_LOD_SCALE"
             value = "2.2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_ISLAND_LOADING"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_VEH_DIST"
@@ -493,6 +493,11 @@
             key = "VC_WHEEL_LOD"
             value = "3"
             isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_SKY_DOME"
+            value = "1"
+            isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
       <MetalAPIValidationSettings
