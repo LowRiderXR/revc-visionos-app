@@ -396,7 +396,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_WEATHER"
-            value = "0"
+            value = "2"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
