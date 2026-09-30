@@ -24,42 +24,42 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Text("Vice City — visionOS")
+            Text("Vice City - visionOS")
                 .font(.title2).fontWeight(.bold)
 
             VStack(alignment: .leading, spacing: 14) {
-                // HUD-Größe
+                // HUD size
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("HUD-Größe")
+                        Text("HUD Size")
                         Spacer()
-                        Text(String(format: "%.2f×", hudSize))
+                        Text(String(format: "%.2fx", hudSize))
                             .monospacedDigit().foregroundStyle(.secondary)
                     }
                     Slider(value: $hudSize, in: 0...1, step: 0.05)
                 }
 
-                // MSAA (Kantenglättung)
+                // MSAA (anti-aliasing)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("MSAA (Kantenglättung)")
+                    Text("MSAA (Anti-Aliasing)")
                     Picker("MSAA", selection: $msaa) {
                         ForEach(GameSettings.msaaOptions, id: \.self) { n in
-                            Text(n == 0 ? "Aus" : "\(n)×").tag(n)
+                            Text(n == 0 ? "Off" : "\(n)x").tag(n)
                         }
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
                 }
 
-                // Auflösung pro Auge (VC_RES-Stufe)
+                // Render resolution per eye (VC_RES step)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Auflösung/Auge")
+                        Text("Resolution per Eye")
                         Spacer()
                         Text(GameSettings.resLabel(res))
                             .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                     }
-                    Picker("Auflösung", selection: $res) {
+                    Picker("Resolution", selection: $res) {
                         ForEach(GameSettings.resOptions, id: \.self) { n in
                             Text("\(n)").tag(n)
                         }
@@ -68,19 +68,19 @@ struct ContentView: View {
                     .labelsHidden()
                 }
 
-                // Ein-Pass-Rendering (OVR_multiview): beide Augen in einem Weltpass.
+                // One-pass rendering (OVR_multiview): both eyes in one world pass.
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Ein-Pass-Rendering (Multiview)", isOn: $multiview)
-                    Text("Beide Augen in einem Durchlauf: halbe CPU-Last, konstantere Bildrate. Experimentell.")
+                    Toggle("One-Pass Rendering (Multiview)", isOn: $multiview)
+                    Text("Both eyes in a single pass: lower CPU load, steadier frame rate. Turn off only if something looks wrong.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
-                // Ziel-Empfindlichkeit (rechter Stick)
+                // Aim sensitivity (right stick)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Ziel-Empfindlichkeit")
+                        Text("Aim Sensitivity")
                         Spacer()
-                        Text(String(format: "%.2f×", aimSensitivity))
+                        Text(String(format: "%.2fx", aimSensitivity))
                             .monospacedDigit().foregroundStyle(.secondary)
                     }
                     Slider(value: $aimSensitivity, in: 0.1...2.0, step: 0.05)
@@ -90,14 +90,14 @@ struct ContentView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 
             Button(action: startGame) {
-                Label("Vice City starten", systemImage: "play.fill")
+                Label("Start Vice City", systemImage: "play.fill")
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(appModel.immersiveSpaceState != .closed)
 
-            Text("Einstellungen werden gespeichert.")
+            Text("Settings are saved automatically.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(20)
@@ -115,7 +115,7 @@ struct ContentView: View {
             switch await openImmersiveSpace(id: appModel.immersiveSpaceID) {
             case .opened:
                 appModel.immersiveSpaceState = .open
-                dismissWindow(id: "main")        // Startfenster ausblenden
+                dismissWindow(id: "main")        // hide the launcher window
             case .userCancelled, .error:
                 appModel.immersiveSpaceState = .closed
             @unknown default:

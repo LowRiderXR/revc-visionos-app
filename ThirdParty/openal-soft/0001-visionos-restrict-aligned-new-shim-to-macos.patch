@@ -1,0 +1,25 @@
+diff --git a/common/almalloc.cpp b/common/almalloc.cpp
+index 68b5b63..ab99f9c 100644
+--- a/common/almalloc.cpp
++++ b/common/almalloc.cpp
+@@ -3,8 +3,18 @@
+ 
+ #if defined(__APPLE__)
+ #include <AvailabilityMacros.h>
+-
+-#if defined(MAC_OS_X_VERSION_MIN_REQUIRED) && MAC_OS_X_VERSION_MIN_REQUIRED < 101300
++#include <TargetConditionals.h>
++
++/* visionOS port (2026-09-30): this block replaces the PROCESS-GLOBAL aligned operator
++ * new/delete with a posix_memalign shim for macOS deployment targets older than 10.13,
++ * where libc++ lacked aligned allocation. On iOS/visionOS SDKs AvailabilityMacros.h
++ * defines MAC_OS_X_VERSION_MIN_REQUIRED as 1050, so the condition was TRUE on visionOS
++ * and the shim replaced libc++'s implementation for every image in the process --
++ * including the system's libFontParser, whose glyph allocations then failed
++ * (posix_memalign rejects alignments below sizeof(void*); libc++ rounds them up).
++ * Visible symptom: missing glyphs (S s a g 6 8) in SwiftUI text of the Release build.
++ * Found with Address Sanitizer ("invalid-posix-memalign-alignment"). Restrict to macOS. */
++#if TARGET_OS_OSX && defined(MAC_OS_X_VERSION_MIN_REQUIRED) && MAC_OS_X_VERSION_MIN_REQUIRED < 101300
+ 
+ #include <stdlib.h>
+ 

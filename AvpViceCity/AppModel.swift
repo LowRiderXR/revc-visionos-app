@@ -66,11 +66,11 @@ enum GameSettings {
     /// Per-eye pixel dimensions for a VC_RES step, mirroring the ladder in visionos.cpp.
     static func resLabel(_ step: Int) -> String {
         switch step {
-        case 0:  return "1920×1080"
-        case 1:  return "2200×2100"
-        case 2:  return "2450×2350"
-        case 3:  return "2600×2500"
-        default: return "2720×2624"
+        case 0:  return "1920x1080"
+        case 1:  return "2200x2100"
+        case 2:  return "2450x2350"
+        case 3:  return "2600x2500"
+        default: return "2720x2624"
         }
     }
 
