@@ -497,7 +497,22 @@
          <EnvironmentVariable
             key = "VC_SKY_DOME"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_CORONA_DIAG"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_WORLD_CORONA"
+            value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_CANVAS_DEPTH"
+            value = "5000"
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
       <MetalAPIValidationSettings
