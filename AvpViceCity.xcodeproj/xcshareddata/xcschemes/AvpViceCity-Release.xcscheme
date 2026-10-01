@@ -514,6 +514,21 @@
             value = "5000"
             isEnabled = "NO">
          </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_AUDIO_DIAG"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_CHIME_FIX"
+            value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_WORLD_RAIN"
+            value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
       </EnvironmentVariables>
       <MetalAPIValidationSettings
          isEnabled = "No">
