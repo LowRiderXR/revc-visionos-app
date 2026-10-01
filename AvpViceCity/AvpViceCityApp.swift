@@ -78,7 +78,7 @@ struct AvpViceCityApp: App {
         // On visionOS the window follows the Scene size, not the content's .frame.
         // Tie it to the content and give a small default so the launcher is compact.
         .windowResizability(.contentSize)
-        .defaultSize(width: 340, height: 340)
+        .defaultSize(width: 460, height: 760)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveSpaceContent(appModel: appModel)
