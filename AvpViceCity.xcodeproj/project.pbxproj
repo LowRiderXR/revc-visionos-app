@@ -219,6 +219,7 @@
 				73568EEE302A4CD7002E846D /* Sources */,
 				73568EEF302A4CD7002E846D /* Frameworks */,
 				73568EF0302A4CD7002E846D /* Resources */,
+				73DF485E3072DCBB003A8467 /* Bundle reVC gamefiles */,
 				732067893033AB5D0024CE04 /* Embed Frameworks */,
 			);
 			buildRules = (
@@ -283,6 +284,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		73DF485E3072DCBB003A8467 /* Bundle reVC gamefiles */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle reVC gamefiles";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\nset -e\nSRC=\"$SRCROOT/../Source/reVC/gamefiles\"\nOUT=\"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/revc-gamefiles.zip\"\nrm -f \"$OUT\"\ncd \"$SRC\"\nzip -q -r -X \"$OUT\" . -x \".DS_Store\" -x \"*/.DS_Store\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		7320607D3030F66B0024CE04 /* Sources */ = {
@@ -431,6 +454,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DTG5LF3YCH;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -461,6 +485,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DTG5LF3YCH;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
