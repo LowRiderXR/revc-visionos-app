@@ -30,6 +30,24 @@ struct ContentView: View {
     @State private var importPlan: SaveImportPlan? = nil
     @State private var importSettingsToo = false
     @State private var transferMessage: String? = nil
+    // "Last export: …" next to the Export button (local only; 0 = never exported).
+    @AppStorage("VC_LAST_EXPORT_DATE") private var lastExportTimestamp: Double = 0
+
+    // Game files (GameFiles.swift): install from a folder or ZIP into Documents/Game/.
+    @State private var installer = GameInstaller()
+    @State private var showInstallPicker = false
+    @State private var showInstallProgress = false
+    @State private var showRemoveConfirm = false
+    @State private var showInstructions = false
+    @State private var installMessage: String? = nil
+    @State private var gameInstalled = GameFiles.isInstalled()
+    @State private var gameSize: Int64 = GameFiles.installedSize()
+
+    private var lastExportText: String {
+        guard lastExportTimestamp > 0 else { return "Never exported" }
+        let d = Date(timeIntervalSince1970: lastExportTimestamp)
+        return "Last export: " + d.formatted(date: .abbreviated, time: .shortened)
+    }
 
     var body: some View {
         VStack(spacing: 22) {
@@ -136,7 +154,49 @@ struct ContentView: View {
                     .disabled(appModel.immersiveSpaceState != .closed)
                 }
                 .buttonStyle(.bordered)
+                HStack {
+                    Text(lastExportText)
+                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    Spacer()
+                }
                 Text("Export copies the saves and settings into a dated folder. Import takes saves only, unless you also choose settings.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+
+            // Game files: the original PC game data, installed once into Documents/Game/.
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Game Files")
+                    Spacer()
+                    if gameInstalled {
+                        Label("Installed, \(ByteCountFormatter.string(fromByteCount: gameSize, countStyle: .file))", systemImage: "checkmark.circle.fill")
+                            .font(.caption).monospacedDigit().foregroundStyle(.green)
+                    } else {
+                        Label("Not installed", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    Button { showInstructions = true } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $showInstructions, arrowEdge: .trailing) { instructionsPopover }
+                }
+                HStack(spacing: 10) {
+                    Button { showInstallPicker = true } label: {
+                        Label(gameInstalled ? "Replace…" : "Install…", systemImage: "folder.badge.plus").frame(maxWidth: .infinity)
+                    }
+                    .disabled(appModel.immersiveSpaceState != .closed)
+                    Button(role: .destructive) { showRemoveConfirm = true } label: {
+                        Label("Remove", systemImage: "trash").frame(maxWidth: .infinity)
+                    }
+                    .disabled(appModel.immersiveSpaceState != .closed || !gameInstalled)
+                }
+                .buttonStyle(.bordered)
+                Text(gameInstalled
+                     ? "The game data is stored in this app's Documents/Game folder. Replace it after a new PC installation, remove it to free up space."
+                     : "Select the folder or ZIP of your PC installation of GTA Vice City (2003). Only the game data is copied; the (i) button explains where to find it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(12)
@@ -148,13 +208,33 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(appModel.immersiveSpaceState != .closed)
+            .disabled(appModel.immersiveSpaceState != .closed || !gameInstalled)
 
-            Text("Settings are saved automatically.")
+            Text(gameInstalled ? "Settings are saved automatically." : "Install the game files to start.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(28)
         .frame(width: 440)
+        .onAppear(perform: refreshGameStatus)
+        .fileImporter(isPresented: $showInstallPicker, allowedContentTypes: [.folder, .zip]) { result in
+            handleInstallSelection(result)
+        }
+        .sheet(isPresented: $showInstallProgress) { installProgressSheet.interactiveDismissDisabled() }
+        .confirmationDialog("Remove the game files?", isPresented: $showRemoveConfirm, titleVisibility: .visible) {
+            Button("Remove Game Files", role: .destructive) {
+                do { try GameFiles.remove(); installMessage = "Game files removed. Your save games were kept." }
+                catch { installMessage = "Remove failed: \(error.localizedDescription)" }
+                refreshGameStatus()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Deletes Documents/Game (\(ByteCountFormatter.string(fromByteCount: gameSize, countStyle: .file))). Save games and settings are not affected.")
+        }
+        .alert("Game Files", isPresented: Binding(get: { installMessage != nil }, set: { if !$0 { installMessage = nil } })) {
+            Button("OK", role: .cancel) { installMessage = nil }
+        } message: {
+            Text(installMessage ?? "")
+        }
         .fileImporter(isPresented: $showExportPicker, allowedContentTypes: [.folder]) { result in
             handleExport(result)
         }
@@ -178,6 +258,7 @@ struct ContentView: View {
         case .success(let folder):
             do {
                 let r = try SaveGameStore.export(to: folder)
+                lastExportTimestamp = Date().timeIntervalSince1970
                 transferMessage = "\(r.files) file(s) exported to \(r.folder.lastPathComponent)."
             } catch {
                 transferMessage = "Export failed: \(error.localizedDescription)"
@@ -238,6 +319,71 @@ struct ContentView: View {
         }
         .padding(24)
         .frame(width: 420)
+    }
+
+    // MARK: game files
+
+    private func refreshGameStatus() {
+        gameInstalled = GameFiles.isInstalled()
+        gameSize = gameInstalled ? GameFiles.installedSize() : 0
+    }
+
+    private func handleInstallSelection(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            showInstallProgress = true
+            Task { @MainActor in
+                do {
+                    try await installer.install(from: url)
+                    refreshGameStatus()
+                    installMessage = "Game files installed (\(ByteCountFormatter.string(fromByteCount: gameSize, countStyle: .file)))."
+                } catch {
+                    refreshGameStatus()
+                    installMessage = error.localizedDescription
+                }
+                showInstallProgress = false
+            }
+        case .failure(let error):
+            installMessage = "Install cancelled: \(error.localizedDescription)"
+        }
+    }
+
+    private var installProgressSheet: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Installing Game Files").font(.title3).fontWeight(.bold)
+            Text(installer.progress.phase.isEmpty ? "Preparing…" : installer.progress.phase)
+            if let f = installer.progress.fraction {
+                ProgressView(value: f)
+            } else {
+                ProgressView()
+            }
+            Text(installer.progress.detail)
+                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                .lineLimit(2).frame(minHeight: 32, alignment: .top)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { installer.cancel() }
+                    .disabled(installer.cancelRequested)
+            }
+        }
+        .padding(24)
+        .frame(width: 420)
+    }
+
+    private var instructionsPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Where to find the game files").font(.headline)
+            Text("You need the classic PC version of GTA Vice City (2003). The Definitive Edition does not work.")
+            Text("Steam: in your library right-click the game, choose Manage → Browse local files. Copy that folder.")
+            Text("Retail disc: the installation folder, usually C:\\Program Files (x86)\\Rockstar Games\\Grand Theft Auto Vice City.")
+            Text("Bring it here: copy the folder (or a ZIP of it) to the Vision Pro via iCloud Drive or a USB drive, or into this app's Documents folder in the Files app. Then tap Install and select it.")
+            Text("Only the game data is copied (about 1.1 GB: anim, audio, data, models, TEXT, txd). Executables, movies and installers are skipped. All nine radio stations (audio/*.adf) must be present.")
+            Text("Save games and settings are stored separately and survive Replace and Remove.")
+                .foregroundStyle(.secondary)
+        }
+        .font(.callout)
+        .padding(20)
+        .frame(width: 400)
     }
 
     private func startGame() {

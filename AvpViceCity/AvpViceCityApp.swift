@@ -60,6 +60,11 @@ struct AvpViceCityApp: App {
         // consumer (drawable config, render loop, reVC) reads them.
         GameSettings.applyToEnvironment()
 
+        // Game data: drop a half-finished Game.incoming/, move root-level data into
+        // Game/ (with a backup of saves + reVC.ini), exclude Game/ from backups. Must run
+        // before the game thread looks for its data root.
+        GameFiles.housekeeping()
+
         // Configure the audio session BEFORE OpenAL opens its device (that happens
         // later on the game thread). .playback is window-independent, so audio
         // survives closing the 2D window.
