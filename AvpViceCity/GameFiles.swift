@@ -38,7 +38,7 @@ enum GameFilesError: LocalizedError {
         case .noDocuments: return "Documents folder not found."
         case .noAccess(let n): return "No access to \(n)."
         case .notFound:
-            return "No Vice City game data found: models/gta3.img is missing. Select the folder (or ZIP) of a classic PC installation of GTA Vice City (2003)."
+            return "No Vice City game data found: models/gta3.img is missing. Select a ZIP of a classic PC installation of GTA Vice City (2003)."
         case .definitiveEdition:
             return "This looks like GTA Vice City – The Definitive Edition. Only the classic PC version (2003, Steam or retail disc) works."
         case .missingRequired(let list):
@@ -78,16 +78,20 @@ enum GameFiles {
     /// Files never copied even inside the folders above.
     static let ignoredFileNames: Set<String> = ["sound.cache", ".ds_store", "thumbs.db", "desktop.ini"]
 
-    /// Required files (data-root relative, lower case). Checked against the code: these are
-    /// opened by name; the radio stations are the nine ADF streams of StreamedNameTable.
+    /// Required files (data-root relative, lower case): files the 2003 PC release ships AND
+    /// reVC opens by name. Files the game generates itself are deliberately absent:
+    /// models/txd.img + txd.dir (CreateTxdImageForVideoCard, only for GPUs without DXT),
+    /// data/waterpro.dat is shipped (and only rewritten in debug builds). data/paths/tracks.dat
+    /// is GTA III only (Train.cpp behind GTA_TRAIN, not defined for VC). The radio stations
+    /// are the nine ADF streams of StreamedNameTable.
     static let requiredFiles: [String] = [
-        "models/gta3.img", "models/gta3.dir", "models/txd.img", "models/txd.dir",
+        "models/gta3.img", "models/gta3.dir",
         "models/hud.txd", "models/fonts.txd", "models/fronten1.txd", "models/fronten2.txd",
         "models/particle.txd", "models/generic.txd", "models/coll/peds.col",
         "data/gta_vc.dat", "data/default.dat", "data/default.ide", "data/main.scm",
         "data/handling.cfg", "data/carcols.dat", "data/particle.cfg", "data/timecyc.dat",
         "data/water.dat", "data/waterpro.dat", "data/object.dat", "data/surface.dat",
-        "data/maps/generic.ide", "data/paths/tracks.dat",
+        "data/maps/generic.ide",
         "anim/ped.ifp", "anim/cuts.img", "anim/cuts.dir",
         "audio/sfx.raw", "audio/sfx.sdt",
         "audio/wild.adf", "audio/flash.adf", "audio/kchat.adf", "audio/fever.adf", "audio/vrock.adf",

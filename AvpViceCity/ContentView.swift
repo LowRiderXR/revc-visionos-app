@@ -196,7 +196,7 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
                 Text(gameInstalled
                      ? "The game data is stored in this app's Documents/Game folder. Replace it after a new PC installation, remove it to free up space."
-                     : "Select the folder or ZIP of your PC installation of GTA Vice City (2003). Only the game data is copied; the (i) button explains where to find it.")
+                     : "Select a ZIP of your PC installation of GTA Vice City (2003). The (i) button explains where to find it and how to bring it here.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(12)
@@ -216,7 +216,7 @@ struct ContentView: View {
         .padding(28)
         .frame(width: 440)
         .onAppear(perform: refreshGameStatus)
-        .fileImporter(isPresented: $showInstallPicker, allowedContentTypes: [.folder, .zip]) { result in
+        .fileImporter(isPresented: $showInstallPicker, allowedContentTypes: [.zip]) { result in
             handleInstallSelection(result)
         }
         .sheet(isPresented: $showInstallProgress) { installProgressSheet.interactiveDismissDisabled() }
@@ -374,10 +374,9 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Where to find the game files").font(.headline)
             Text("You need the classic PC version of GTA Vice City (2003). The Definitive Edition does not work.")
-            Text("Steam: in your library right-click the game, choose Manage → Browse local files. Copy that folder.")
-            Text("Retail disc: the installation folder, usually C:\\Program Files (x86)\\Rockstar Games\\Grand Theft Auto Vice City.")
-            Text("Bring it here: copy the folder (or a ZIP of it) to the Vision Pro via iCloud Drive or a USB drive, or into this app's Documents folder in the Files app. Then tap Install and select it.")
-            Text("Only the game data is copied (about 1.1 GB: anim, audio, data, models, TEXT, txd). Executables, movies and installers are skipped. All nine radio stations (audio/*.adf) must be present.")
+            Text("Steam: in your library right-click the game, choose Manage → Browse local files.")
+            Text("Retail disc: the installation folder, usually C:\\Program Files\\Rockstar Games\\Grand Theft Auto Vice City.")
+            Text("Compress that folder into a ZIP file and bring it to the Vision Pro via iCloud Drive (recommended) or AirDrop. Then tap Install and select the ZIP.")
             Text("Save games and settings are stored separately and survive Replace and Remove.")
                 .foregroundStyle(.secondary)
         }
