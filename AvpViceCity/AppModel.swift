@@ -36,7 +36,11 @@ enum GameSettings {
     /// there, not GPU) -> 4. M2 assumed, not measured -> 2. Anything that is not an M2 is
     /// treated as at least as fast as the M5.
     static var msaaDefault: Int { isM2Device ? 2 : 4 }
-    static let msaaOptions: [Int] = [0, 2, 4, 8]
+    /// Apple GPUs (M2 and M5 alike) support sample counts 1, 2 and 4 only; ANGLE Metal
+    /// derives GL_MAX_SAMPLES from supportsTextureSampleCount, so 8 is rejected by the
+    /// driver and the MSAA setup fails over to no MSAA. Not offered (2026-10-05).
+    static let msaaOptions: [Int] = [0, 2, 4]
+    static let msaaMax: Int = 4
 
     /// Device class from the Metal device name ("Apple M2" on the first Vision Pro).
     /// Logged once so a wrong classification is visible in the console.
@@ -49,17 +53,15 @@ enum GameSettings {
     static let resDefault: Int = 4
     static let resOptions: [Int] = [0, 1, 2, 3, 4]
     static let aimSensitivityDefault: Double = 1.0
-    /// One-pass stereo (OVR_multiview): both eyes in one world pass. Default ON since
-    /// 2026-09-29: the long play session (missions, cutscenes, interiors, weather, MSAA 4,
-    /// full-speed driving) was clean; the only finding (headlight coronas slightly offset)
-    /// is the known sprite family S1, independent of the toggle. The toggle stays as the
-    /// way back (multiview-plan.md, Launcher).
-    static let multiviewDefault: Bool = true
-    static func multiviewSetting() -> Bool? { UserDefaults.standard.object(forKey: "VC_MULTIVIEW") as? Bool }
-    static func multiview() -> Bool { multiviewSetting() ?? multiviewDefault }
+    /// One-pass stereo (OVR_multiview): both eyes in one world pass. Always on since the
+    /// launcher toggle was removed (2026-10-05; default ON since 2026-09-29, every acceptance
+    /// since ran with it). Developer fallback: VC_MULTIVIEW=0 in the Xcode scheme is
+    /// honoured by applyToEnvironment() and selects the two-pass path.
+    static let multiviewForced: Bool = true
 
     static func hudSize() -> Double { UserDefaults.standard.object(forKey: "VC_HUD_SIZE") as? Double ?? hudSizeDefault }
-    static func msaa() -> Int { UserDefaults.standard.object(forKey: "VC_MSAA") as? Int ?? msaaDefault }
+    /// Stored values above the hardware maximum (an old "8x" choice) are read as the maximum.
+    static func msaa() -> Int { min(UserDefaults.standard.object(forKey: "VC_MSAA") as? Int ?? msaaDefault, msaaMax) }
     static func res() -> Int { UserDefaults.standard.object(forKey: "VC_RES") as? Int ?? resDefault }
     static func aimSensitivity() -> Double { UserDefaults.standard.object(forKey: "VC_AIM_SENSITIVITY") as? Double ?? aimSensitivityDefault }
 
@@ -79,17 +81,21 @@ enum GameSettings {
         setenv("VC_MSAA", String(msaa()), 1)
         setenv("VC_RES", String(res()), 1)
         setenv("VC_AIM_SENSITIVITY", String(format: "%.2f", aimSensitivity()), 1)
-        // Multiview: the launcher is the single switch (toggle, default ON). It always sets
-        // both variables, so the scheme entries for VC_MULTIVIEW/KL_GL_MULTIVIEW no longer
-        // decide anything -- A/B runs use the toggle. KL_GL_MULTIVIEW makes ANGLE advertise
-        // GL_OVR_multiview; it is read at EGL display creation, which happens after this
-        // call (immersive space -> game start). OFF removes it so the mono path sees the
-        // same GL as before the whole multiview work.
         // Device class for the game side (Frontend.cpp: draw-distance slider ceiling/default,
         // island-loading default). 1 = M2 class (assumed values), 0 = M5 or newer (measured).
         setenv("VC_DEVICE_M2", isM2Device ? "1" : "0", 1)
-        let mv = multiview()
+        // Multiview: always on. KL_GL_MULTIVIEW makes ANGLE advertise GL_OVR_multiview; it
+        // is read at EGL display creation, which happens after this call (immersive space
+        // -> game start). Developer fallback: VC_MULTIVIEW=0 set in the Xcode scheme (seen
+        // in the process environment at launch) keeps the two-pass path and removes the
+        // extension so the mono path sees the same GL as before the multiview work.
+        // A value stored by the former launcher toggle is dropped so no device stays on
+        // two-pass silently.
+        UserDefaults.standard.removeObject(forKey: "VC_MULTIVIEW")
+        let schemeOff = ProcessInfo.processInfo.environment["VC_MULTIVIEW"] == "0"
+        let mv = multiviewForced && !schemeOff
         setenv("VC_MULTIVIEW", mv ? "1" : "0", 1)
         if mv { setenv("KL_GL_MULTIVIEW", "1", 1) } else { unsetenv("KL_GL_MULTIVIEW") }
+        if schemeOff { print("[vc-launcher] VC_MULTIVIEW=0 from the scheme -> two-pass fallback") }
     }
 }

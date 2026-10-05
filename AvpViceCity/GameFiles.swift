@@ -38,9 +38,9 @@ enum GameFilesError: LocalizedError {
         case .noDocuments: return "Documents folder not found."
         case .noAccess(let n): return "No access to \(n)."
         case .notFound:
-            return "No Vice City game data found: models/gta3.img is missing. Select a ZIP of a classic PC installation of GTA Vice City (2003)."
+            return "No Vice City game data found: models/gta3.img is missing. Select a ZIP of the original PC version of GTA Vice City."
         case .definitiveEdition:
-            return "This looks like GTA Vice City – The Definitive Edition. Only the classic PC version (2003, Steam or retail disc) works."
+            return "This looks like GTA Vice City – The Definitive Edition. Only the original PC version (Rockstar Store or retail disc) works."
         case .missingRequired(let list):
             return "The game data is incomplete. Missing: " + list.prefix(8).joined(separator: ", ") + (list.count > 8 ? " and \(list.count - 8) more" : "") + "."
         case .notEnoughSpace(let needed, let free):
@@ -146,6 +146,12 @@ enum GameFiles {
         if fm.fileExists(atPath: incoming.path) {
             try? fm.removeItem(at: incoming)
             print("[vc-files] removed leftover \(incoming.lastPathComponent)")
+        }
+        // Developer switch (Xcode scheme, default off): VC_DEV_WIPE_GAME=1 deletes Game/ at
+        // launch so the install flow can be tested from "Not installed". Saves untouched.
+        if ProcessInfo.processInfo.environment["VC_DEV_WIPE_GAME"] == "1", fm.fileExists(atPath: game.path) {
+            do { try fm.removeItem(at: game); print("[vc-files] VC_DEV_WIPE_GAME=1 -> Game/ deleted at launch") }
+            catch { print("[vc-files] VC_DEV_WIPE_GAME: delete failed: \(error)") }
         }
         migrateRootData(docs: docs, game: game)
         if fm.fileExists(atPath: game.path) { excludeFromBackup(game) }

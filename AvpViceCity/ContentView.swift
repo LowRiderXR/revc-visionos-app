@@ -21,7 +21,6 @@ struct ContentView: View {
     @AppStorage("VC_MSAA") private var msaa: Int = GameSettings.msaaDefault
     @AppStorage("VC_RES") private var res: Int = GameSettings.resDefault
     @AppStorage("VC_AIM_SENSITIVITY") private var aimSensitivity: Double = GameSettings.aimSensitivityDefault
-    @AppStorage("VC_MULTIVIEW") private var multiview: Bool = GameSettings.multiviewDefault
 
     // Save-game export / import (SaveGameTransfer.swift). Folder pickers via fileImporter;
     // the import shows its plan first and takes settings only when the toggle is on.
@@ -37,7 +36,6 @@ struct ContentView: View {
     @State private var installer = GameInstaller()
     @State private var showInstallPicker = false
     @State private var showInstallProgress = false
-    @State private var showRemoveConfirm = false
     @State private var showInstructions = false
     @State private var installMessage: String? = nil
     @State private var gameInstalled = GameFiles.isInstalled()
@@ -54,6 +52,10 @@ struct ContentView: View {
             Text("Vice City - visionOS")
                 .font(.title2).fontWeight(.bold)
 
+            // Two columns: render/controls settings left, save games + game files right.
+            // The right-hand cards stretch to the left column's height so both columns
+            // end on the same line.
+            HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 18) {
                 // HUD size
                 VStack(alignment: .leading, spacing: 4) {
@@ -95,13 +97,6 @@ struct ContentView: View {
                     .labelsHidden()
                 }
 
-                // One-pass rendering (OVR_multiview): both eyes in one world pass.
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle("One-Pass Rendering (Multiview)", isOn: $multiview)
-                    Text("Both eyes in a single pass: lower CPU load, steadier frame rate. Turn off only if something looks wrong.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-
                 // Aim sensitivity (right stick)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -123,7 +118,6 @@ struct ContentView: View {
                         msaa = GameSettings.msaaDefault
                         res = GameSettings.resDefault
                         aimSensitivity = GameSettings.aimSensitivityDefault
-                        multiview = GameSettings.multiviewDefault
                     } label: {
                         Label("Reset to \(GameSettings.isM2Device ? "M2" : "M5") Defaults", systemImage: "arrow.counterclockwise")
                     }
@@ -132,8 +126,10 @@ struct ContentView: View {
                 }
             }
             .padding(12)
+            .frame(maxWidth: .infinity)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 
+            VStack(spacing: 20) {
             // Save games: export to a folder of your choice (new time-stamped sub-folder),
             // import from a folder (saves only by default; asks before replacing slots).
             VStack(alignment: .leading, spacing: 8) {
@@ -163,6 +159,8 @@ struct ContentView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(12)
+            .fixedSize(horizontal: false, vertical: true)   // never shorter than the text needs (no "Grand T…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 
             // Game files: the original PC game data, installed once into Documents/Game/.
@@ -183,24 +181,33 @@ struct ContentView: View {
                     .buttonStyle(.borderless)
                     .popover(isPresented: $showInstructions, arrowEdge: .trailing) { instructionsPopover }
                 }
-                HStack(spacing: 10) {
-                    Button { showInstallPicker = true } label: {
-                        Label(gameInstalled ? "Replace…" : "Install…", systemImage: "folder.badge.plus").frame(maxWidth: .infinity)
-                    }
-                    .disabled(appModel.immersiveSpaceState != .closed)
-                    Button(role: .destructive) { showRemoveConfirm = true } label: {
-                        Label("Remove", systemImage: "trash").frame(maxWidth: .infinity)
-                    }
-                    .disabled(appModel.immersiveSpaceState != .closed || !gameInstalled)
+                // No Remove button: broken or new data is handled by Replace, and space is
+                // freed by exporting the saves and deleting the app -- one less way to
+                // delete something by accident.
+                Button { showInstallPicker = true } label: {
+                    Label(gameInstalled ? "Replace…" : "Install…", systemImage: "folder.badge.plus").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                Text(gameInstalled
-                     ? "The game data is stored in this app's Documents/Game folder. Replace it after a new PC installation, remove it to free up space."
-                     : "Select a ZIP of your PC installation of GTA Vice City (2003). The (i) button explains where to find it and how to bring it here.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .disabled(appModel.immersiveSpaceState != .closed)
+                // Literal strings so the markdown link is parsed (Text(String) would not).
+                // The Rockstar Store "Grand Theft Auto: The Trilogy" is the classic 2005
+                // compilation of the original games (checked 2026-10-05), not the Definitive Edition.
+                if gameInstalled {
+                    Text("To replace, choose a ZIP of your Vice City PC folder, for example from iCloud Drive. Original PC version only, not the Definitive Edition ([Rockstar Store](https://store.rockstargames.com/de/game/buy-grand-theft-auto-the-trilogy)).")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("To install, choose a ZIP of your Vice City PC folder, for example from iCloud Drive. You need the original PC version, not the Definitive Edition; it is sold as [Grand Theft Auto: The Trilogy](https://store.rockstargames.com/de/game/buy-grand-theft-auto-the-trilogy) in the Rockstar Store. The (i) button explains the steps.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(12)
+            .fixedSize(horizontal: false, vertical: true)   // never shorter than the text needs (no "Grand T…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .frame(maxWidth: .infinity)
+            }
+            .fixedSize(horizontal: false, vertical: true)
 
             Button(action: startGame) {
                 Label("Start Vice City", systemImage: "play.fill")
@@ -214,22 +221,12 @@ struct ContentView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(28)
-        .frame(width: 440)
+        .frame(width: 780)
         .onAppear(perform: refreshGameStatus)
         .fileImporter(isPresented: $showInstallPicker, allowedContentTypes: [.zip]) { result in
             handleInstallSelection(result)
         }
         .sheet(isPresented: $showInstallProgress) { installProgressSheet.interactiveDismissDisabled() }
-        .confirmationDialog("Remove the game files?", isPresented: $showRemoveConfirm, titleVisibility: .visible) {
-            Button("Remove Game Files", role: .destructive) {
-                do { try GameFiles.remove(); installMessage = "Game files removed. Your save games were kept." }
-                catch { installMessage = "Remove failed: \(error.localizedDescription)" }
-                refreshGameStatus()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Deletes Documents/Game (\(ByteCountFormatter.string(fromByteCount: gameSize, countStyle: .file))). Save games and settings are not affected.")
-        }
         .alert("Game Files", isPresented: Binding(get: { installMessage != nil }, set: { if !$0 { installMessage = nil } })) {
             Button("OK", role: .cancel) { installMessage = nil }
         } message: {
@@ -373,11 +370,11 @@ struct ContentView: View {
     private var instructionsPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Where to find the game files").font(.headline)
-            Text("You need the classic PC version of GTA Vice City (2003). The Definitive Edition does not work.")
-            Text("Steam: in your library right-click the game, choose Manage → Browse local files.")
+            Text("You need the original PC version of GTA Vice City. The Definitive Edition does not work. The original is sold as [Grand Theft Auto: The Trilogy](https://store.rockstargames.com/de/game/buy-grand-theft-auto-the-trilogy) in the Rockstar Store.")
+            Text("Rockstar Games Launcher: Settings → My installed games → Grand Theft Auto: Vice City → View installation folder.")
             Text("Retail disc: the installation folder, usually C:\\Program Files\\Rockstar Games\\Grand Theft Auto Vice City.")
             Text("Compress that folder into a ZIP file and bring it to the Vision Pro via iCloud Drive (recommended) or AirDrop. Then tap Install and select the ZIP.")
-            Text("Save games and settings are stored separately and survive Replace and Remove.")
+            Text("Save games and settings are stored separately and survive a Replace.")
                 .foregroundStyle(.secondary)
         }
         .font(.callout)

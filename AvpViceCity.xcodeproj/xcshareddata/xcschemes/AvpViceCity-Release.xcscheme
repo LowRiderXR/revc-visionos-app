@@ -55,6 +55,11 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
+            key = "VC_DEV_WIPE_GAME"
+            value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "VC_DEBUG_TRIANGLE"
             value = "0"
             isEnabled = "NO">
@@ -397,7 +402,7 @@
          <EnvironmentVariable
             key = "VC_WEATHER"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "KL_ANGLE_VRR_TRACE"
@@ -527,6 +532,11 @@
          <EnvironmentVariable
             key = "VC_WORLD_RAIN"
             value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DEV_WIPE_GAME"
+            value = "1"
             isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
