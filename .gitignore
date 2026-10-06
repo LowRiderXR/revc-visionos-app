@@ -7,3 +7,5 @@ build/
 xcuserdata/
 # prebuilt third-party binaries: fetched from the GitHub release by setup.sh
 ThirdParty/openal-soft/lib/*.a
+ThirdParty/.downloads/
+release-assets/
