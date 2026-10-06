@@ -143,6 +143,42 @@ nonisolated let vcMenuSize: Float = {
     }
     return 0.25
 }()
+// Pause menu anchored IN THE ROOM (2026-10-06): while the menu is up, the menu panel AND
+// the frozen world picture behind it are placed at the head pose captured when the menu
+// opened, like the start menu (mono path, world-anchored quad). A head-locked panel moved
+// with every head turn and caused motion sickness. Anchoring only the panel (an earlier
+// attempt) left the background head-locked -> two conflicting motions; both must freeze.
+// VC_MENU_ANCHOR=0 = old head-locked behaviour (A/B).
+nonisolated let vcMenuAnchorInRoom: Bool = {
+    ProcessInfo.processInfo.environment["VC_MENU_ANCHOR"] != "0"
+}()
+// Frozen WORLD picture behind the menu: default head-locked like during play (no picture
+// edges when turning; user 2026-10-06). VC_MENU_WORLD=room freezes it in the room with
+// the panel instead (edges become visible on large head turns).
+nonisolated let vcMenuWorldInRoom: Bool = {
+    ProcessInfo.processInfo.environment["VC_MENU_WORLD"] == "room"
+}()
+// Live world under the pause menu (default on, mirrors VC_MENU_LIVE on the C side): the
+// game keeps running the eye passes with the live head pose while paused, so the world
+// slices are fresh every frame -> shown head-locked like during play (look around, no
+// edges), the menu panel alone stands in the room. Nothing is frozen; the panel is drawn
+// with the RENDER anchor (A) like the slices, so the compositor reprojects both together.
+nonisolated let vcMenuLiveWorld: Bool = {
+    ProcessInfo.processInfo.environment["VC_MENU_LIVE"] != "0"
+}()
+
+/// Menu-open pose made UPRIGHT: keep position and yaw of the head, drop pitch and roll,
+/// so the panel always stands level in front of the player even if the menu was opened
+/// with a tilted head. Falls back to the full pose when looking straight up/down.
+nonisolated func vcUprightPose(_ t: simd_float4x4) -> simd_float4x4 {
+    let back = SIMD3<Float>(t.columns.2.x, 0, t.columns.2.z)   // device +Z = backward
+    let len = simd_length(back)
+    guard len > 0.2 else { return t }
+    let b = back / len
+    let up = SIMD3<Float>(0, 1, 0)
+    let right = simd_normalize(simd_cross(up, b))
+    return simd_float4x4(SIMD4<Float>(right, 0), SIMD4<Float>(up, 0), SIMD4<Float>(b, 0), t.columns.3)
+}
 
 
 // The 90 Hz frame budget in milliseconds (1/90 s). Full-length bar == budget;
@@ -277,6 +313,7 @@ actor Renderer {
     var heldTexture: MTLTexture?
     var heldHudTexture: MTLTexture?        // stereo HUD overlay for the held frame (nil in cinema)
     var frozenWorldTexture: MTLTexture?    // world slices frozen at menu-open (paused = no eye passes)
+    var menuFrozenPose: simd_float4x4?     // device pose (origin<-anchor) captured at menu-open; menu + frozen world hang there
     var heldIndex: UInt32 = 0
     var heldWaitValue: UInt64 = 0
     var hasHeldFrame = false
@@ -778,7 +815,9 @@ actor Renderer {
         // that glued panel by the head motion over the pipeline latency -> it swims/juders
         // (worse the staler the frame; that is why VC_CAP_LEAD_MS only dampened it). Keep
         // the CURRENT pose B during the menu so the panel stays glued.
-        if vcReprojFix, vc_render_mode() == VC_MODE_STEREO, vc_menu_active() == 0,
+        // With the live world under the menu (vcMenuLiveWorld) the slices ARE baked at pose
+        // A again and the room-anchored panel is drawn with A too -> report A as in play.
+        if vcReprojFix, vc_render_mode() == VC_MODE_STEREO, (vc_menu_active() == 0 || vcMenuLiveWorld),
            vc_splash_active() == 0, let a = heldRenderAnchor {
             for drawable in drawables { drawable.deviceAnchor = a }
         }
@@ -1364,11 +1403,18 @@ actor Renderer {
 
             let menuActive = vc_menu_active() != 0
             if menuActive {
-                if frozenWorldTexture == nil { frozenWorldTexture = gameTexture }
+                // Frozen picture only when the game does NOT render under the menu.
+                if !vcMenuLiveWorld, frozenWorldTexture == nil { frozenWorldTexture = gameTexture }
+                // Freeze the (upright) head pose once per menu session; the panel is drawn
+                // relative to it (see menuViewMatrix).
+                if menuFrozenPose == nil, let a = drawables.first?.deviceAnchor {
+                    menuFrozenPose = vcUprightPose(a.originFromAnchorTransform)
+                }
             } else {
                 frozenWorldTexture = nil
+                menuFrozenPose = nil
             }
-            let worldTexture = menuActive ? (frozenWorldTexture ?? gameTexture) : gameTexture
+            let worldTexture = (menuActive && !vcMenuLiveWorld) ? (frozenWorldTexture ?? gameTexture) : gameTexture
             encodeGameStereoScreen(drawables: drawables, commandBuffer: commandBuffer, texture: worldTexture)
             if vcHudEnabled, let hud = heldHudTexture {
                 encodeGameHud(drawables: drawables, commandBuffer: commandBuffer, texture: hud)
@@ -1531,7 +1577,12 @@ actor Renderer {
             var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
             for i in 0..<min(drawable.views.count, 2) {
                 let view = drawable.views[i]
-                let viewMatrix = view.transform.inverse   // head-locked
+                // Head-locked while playing AND (by default) during the pause menu, so
+                // the frozen picture has no visible edges; VC_MENU_WORLD=room hangs it in
+                // the room with the panel (menuViewMatrix).
+                let viewMatrix = (vcMenuWorldInRoom && !vcMenuLiveWorld)
+                    ? menuViewMatrix(view: view, drawable: drawable)
+                    : view.transform.inverse
                 let projectionMatrix = drawable.computeProjection(viewIndex: i)
                 viewProjection[i] = projectionMatrix * viewMatrix
             }
@@ -1631,7 +1682,11 @@ actor Renderer {
             var viewProjection = [matrix_identity_float4x4, matrix_identity_float4x4]
             for i in 0..<min(drawable.views.count, 2) {
                 let view = drawable.views[i]
-                let viewMatrix = view.transform.inverse   // head-locked (HUD and menu)
+                // HUD and splash: head-locked. Menu panel: in the room at the menu-open
+                // pose (menuViewMatrix falls back to head-locked when not in the menu).
+                let viewMatrix = (menuActive && quadOverride == nil)
+                    ? menuViewMatrix(view: view, drawable: drawable)
+                    : view.transform.inverse
                 let projectionMatrix = drawable.computeProjection(viewIndex: i)
                 viewProjection[i] = projectionMatrix * viewMatrix
             }
@@ -1644,6 +1699,23 @@ actor Renderer {
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()
         }
+    }
+
+    /// View matrix for quads whose vertices are defined in device (head) space. Playing:
+    /// head-locked (view.transform.inverse). Pause menu with VC_MENU_ANCHOR on: the quad is
+    /// placed in the ROOM at the pose frozen when the menu opened -- world->eye of the
+    /// current frame times the frozen device->world pose -- so turning the head leaves the
+    /// panel (and the frozen world picture) where they were.
+    private func menuViewMatrix(view: LayerRenderer.Drawable.View, drawable: LayerRenderer.Drawable) -> simd_float4x4 {
+        if vcMenuAnchorInRoom, vc_menu_active() != 0, let pose = menuFrozenPose {
+            // Live world: use the RENDER anchor (A) that the slices were baked with and
+            // that is reported to the compositor, so panel and world reproject together.
+            let anchor = (vcMenuLiveWorld && vcReprojFix) ? (heldRenderAnchor ?? drawable.deviceAnchor) : drawable.deviceAnchor
+            if let anchor {
+                return (anchor.originFromAnchorTransform * view.transform).inverse * pose
+            }
+        }
+        return view.transform.inverse
     }
 
     /// Two world-anchored bars (triangle strips) below the screen: a thicker one
