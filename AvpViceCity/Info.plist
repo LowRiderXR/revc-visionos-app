@@ -19,6 +19,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>CFBundleDisplayName</key>
+	<string>reVC for visionOS</string>
 	<key>GCSupportsControllerUserInteraction</key>
 	<true/>
 	<key>UIBackgroundModes</key>

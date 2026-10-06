@@ -49,7 +49,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 22) {
-            Text("Vice City - visionOS")
+            Text("reVC for visionOS")
                 .font(.title2).fontWeight(.bold)
 
             // Two columns: render/controls settings left, save games + game files right.

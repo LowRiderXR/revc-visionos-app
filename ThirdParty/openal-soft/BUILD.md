@@ -43,12 +43,14 @@ cmake --build build-xros --config Release --target OpenAL
 Backends that end up active on visionOS: CoreAudio, WaveFile, Null (the other backend
 options stay at their defaults and are simply not found on this platform).
 
-Outputs (referenced by the Xcode project relative to the app repo as
-`../Prototypes/openal-soft/...`):
+Outputs, and where the Xcode project expects them inside the app repo (since 2026-10-06;
+`lib/*.a` is git-ignored and normally downloaded from the GitHub release by `setup.sh`,
+the headers in `include/AL/` are versioned):
 
 ```
-build-xros/Release-xros/libopenal.a
-build-xros/build/alsoft.fmt.build/Release-xros/libalsoft.fmt.a
+build-xros/Release-xros/libopenal.a                              -> ThirdParty/openal-soft/lib/libopenal.a
+build-xros/build/alsoft.fmt.build/Release-xros/libalsoft.fmt.a   -> ThirdParty/openal-soft/lib/libalsoft.fmt.a
+include/AL/*.h                                                   -> ThirdParty/openal-soft/include/AL/
 ```
 
 ## Verify

@@ -52,10 +52,10 @@
 
 /* Begin PBXFileReference section */
 		732060813030F66B0024CE04 /* libreVCCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libreVCCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		7320677130339CEA0024CE04 /* libopenal.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libopenal.a; path = "../Prototypes/openal-soft/build-xros/Release-xros/libopenal.a"; sourceTree = "<group>"; };
-		7320677330339D910024CE04 /* libalsoft.fmt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libalsoft.fmt.a; path = "../Prototypes/openal-soft/build-xros/build/alsoft.fmt.build/Release-xros/libalsoft.fmt.a"; sourceTree = "<group>"; };
-		732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ANGLE_libEGL.xcframework; path = "../Prototypes/angle-src/Frameworks/ANGLE_libEGL.xcframework"; sourceTree = "<group>"; };
-		7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ANGLE_libGLESv2.xcframework; path = "../Prototypes/angle-src/Frameworks/ANGLE_libGLESv2.xcframework"; sourceTree = "<group>"; };
+		7320677130339CEA0024CE04 /* libopenal.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libopenal.a; sourceTree = "<group>"; };
+		7320677330339D910024CE04 /* libalsoft.fmt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libalsoft.fmt.a; sourceTree = "<group>"; };
+		732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = ANGLE_libEGL.xcframework; sourceTree = "<group>"; };
+		7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = ANGLE_libGLESv2.xcframework; sourceTree = "<group>"; };
 		73568EF2302A4CD7002E846D /* AvpViceCity.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AvpViceCity.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -148,12 +148,43 @@
 		7320608B3030F68E0024CE04 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */,
-				732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */,
-				7320677330339D910024CE04 /* libalsoft.fmt.a */,
-				7320677130339CEA0024CE04 /* libopenal.a */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		732DECF7307572140008643F /* ThirdParty */ = {
+			isa = PBXGroup;
+			children = (
+				732DECF83075721A0008643F /* ANGLE */,
+				732DECF93075721A0008643F /* openal-soft */,
+			);
+			path = ThirdParty;
+			sourceTree = "<group>";
+		};
+		732DECF83075721A0008643F /* ANGLE */ = {
+			isa = PBXGroup;
+			children = (
+				7320678A3033AB710024CE04 /* ANGLE_libGLESv2.xcframework */,
+				732067863033AB5D0024CE04 /* ANGLE_libEGL.xcframework */,
+			);
+			path = ANGLE;
+			sourceTree = "<group>";
+		};
+		732DECF93075721A0008643F /* openal-soft */ = {
+			isa = PBXGroup;
+			children = (
+				732DECFA3075721F0008643F /* lib */,
+			);
+			path = "openal-soft";
+			sourceTree = "<group>";
+		};
+		732DECFA3075721F0008643F /* lib */ = {
+			isa = PBXGroup;
+			children = (
+				7320677130339CEA0024CE04 /* libopenal.a */,
+				7320677330339D910024CE04 /* libalsoft.fmt.a */,
+			);
+			path = lib;
 			sourceTree = "<group>";
 		};
 		73568EE9302A4CD7002E846D = {
@@ -166,6 +197,7 @@
 				7320671C303222AE0024CE04 /* src */,
 				7320608B3030F68E0024CE04 /* Frameworks */,
 				73568EF3302A4CD7002E846D /* Products */,
+				732DECF7307572140008643F /* ThirdParty */,
 			);
 			sourceTree = "<group>";
 		};
@@ -348,6 +380,7 @@
 					LIBRW_VISIONOS,
 				);
 				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/ThirdParty/openal-soft/include",
 					"$(SRCROOT)/../Source/reVC/src",
 					"$(SRCROOT)/../Source/reVC/src/animation",
 					"$(SRCROOT)/../Source/reVC/src/audio",
@@ -358,6 +391,8 @@
 					"$(SRCROOT)/../Source/reVC/src/control",
 					"$(SRCROOT)/../Source/reVC/src/core",
 					"$(SRCROOT)/../Source/reVC/src/entities",
+					"$(SRCROOT)/../Source/reVC/src/extras",
+					"$(SRCROOT)/../Source/reVC/src/fakerw",
 					"$(SRCROOT)/../Source/reVC/src/math",
 					"$(SRCROOT)/../Source/reVC/src/modelinfo",
 					"$(SRCROOT)/../Source/reVC/src/objects",
@@ -369,11 +404,8 @@
 					"$(SRCROOT)/../Source/reVC/src/text",
 					"$(SRCROOT)/../Source/reVC/src/vehicles",
 					"$(SRCROOT)/../Source/reVC/src/weapons",
-					"$(SRCROOT)/../Source/reVC/src/extras",
-					"$(SRCROOT)/../Source/reVC/vendor/librw",
 					"$(SRCROOT)/../Source/reVC/vendor/dr_libs",
-					"$(SRCROOT)/../Source/reVC/src/fakerw",
-					"$(SRCROOT)/../Prototypes/openal-soft/include",
+					"$(SRCROOT)/../Source/reVC/vendor/librw",
 				);
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(OTHER_CFLAGS)",
@@ -404,6 +436,7 @@
 					LIBRW_VISIONOS,
 				);
 				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/ThirdParty/openal-soft/include",
 					"$(SRCROOT)/../Source/reVC/src",
 					"$(SRCROOT)/../Source/reVC/src/animation",
 					"$(SRCROOT)/../Source/reVC/src/audio",
@@ -414,6 +447,8 @@
 					"$(SRCROOT)/../Source/reVC/src/control",
 					"$(SRCROOT)/../Source/reVC/src/core",
 					"$(SRCROOT)/../Source/reVC/src/entities",
+					"$(SRCROOT)/../Source/reVC/src/extras",
+					"$(SRCROOT)/../Source/reVC/src/fakerw",
 					"$(SRCROOT)/../Source/reVC/src/math",
 					"$(SRCROOT)/../Source/reVC/src/modelinfo",
 					"$(SRCROOT)/../Source/reVC/src/objects",
@@ -425,11 +460,8 @@
 					"$(SRCROOT)/../Source/reVC/src/text",
 					"$(SRCROOT)/../Source/reVC/src/vehicles",
 					"$(SRCROOT)/../Source/reVC/src/weapons",
-					"$(SRCROOT)/../Source/reVC/src/extras",
-					"$(SRCROOT)/../Source/reVC/vendor/librw",
 					"$(SRCROOT)/../Source/reVC/vendor/dr_libs",
-					"$(SRCROOT)/../Source/reVC/src/fakerw",
-					"$(SRCROOT)/../Prototypes/openal-soft/include",
+					"$(SRCROOT)/../Source/reVC/vendor/librw",
 				);
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(OTHER_CFLAGS)",
@@ -461,6 +493,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/ThirdParty/openal-soft/lib";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lowriderxr.AvpViceCity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -492,6 +525,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/ThirdParty/openal-soft/lib";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lowriderxr.AvpViceCity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -560,10 +594,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/Release-xros",
-					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/build/alsoft.fmt.build/Release-xros",
-				);
+				LIBRARY_SEARCH_PATHS = "";
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -622,10 +653,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/Release-xros",
-					"$(SRCROOT)/../Prototypes/openal-soft/build-xros/build/alsoft.fmt.build/Release-xros",
-				);
+				LIBRARY_SEARCH_PATHS = "";
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
