@@ -102,6 +102,12 @@ patch chain, gn args, retarget to visionOS).
 | [librw-visionos](https://github.com/LowRiderXR/librw-visionos) | librw with the GLES/ANGLE/stereo changes | MIT |
 | [visionos-angle-kit](https://github.com/LowRiderXR/visionos-angle-kit) | patches and build recipe for ANGLE on visionOS | per patch (Klepton: MIT) |
 
+## Disclaimer
+
+This project is provided "as is", without warranty of any kind. Use it
+at your own risk. The author is not liable for any damage, data loss or
+other issues arising from building, installing or using it.
+
 ## License
 
 The code written for this repository is MIT-licensed (`LICENSE`).
