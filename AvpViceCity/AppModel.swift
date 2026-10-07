@@ -31,7 +31,7 @@ class AppModel {
 /// Call once at launch and again right before opening the immersive space.
 enum GameSettings {
     static let hudSizeDefault: Double = 0.4
-    /// MSAA default per device (multiview-plan.md, Gerätestandards 2026-09-29): M5 measured
+    /// MSAA default per device (multiview-plan.md, device defaults 2026-09-29): M5 measured
     /// with MSAA 4 on the reference route (90 fps open, 84 in the dense centre, CPU-bound
     /// there, not GPU) -> 4. M2 assumed, not measured -> 2. Anything that is not an M2 is
     /// treated as at least as fast as the M5.

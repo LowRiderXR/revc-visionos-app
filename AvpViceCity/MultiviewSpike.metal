@@ -1,6 +1,6 @@
 //
 //  MultiviewSpike.metal
-//  Stufe 1 of the multiview plan: shader for the standalone spike pass.
+//  stage 1 of the multiview plan: shader for the standalone spike pass.
 //  Draws colored bars given in LOGICAL pixels; layer 1 (amplification_id == 1)
 //  shifts all geometry by params.zw so the two slices are distinguishable.
 //

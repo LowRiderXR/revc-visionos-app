@@ -1,6 +1,6 @@
 //
 //  MultiviewSpike.swift
-//  Stufe 1 of the multiview plan (Docs/vicecity/multiview-plan.md).
+//  stage 1 of the multiview plan (Docs/vicecity/multiview-plan.md).
 //
 //  A standalone offscreen render pass, outside ANGLE, that combines the two
 //  UNPROVEN ingredients of the multiview goal in one pass:
@@ -303,15 +303,15 @@ enum MultiviewSpike {
         print("[mv-spike] RESULT=\(failures == 0 ? "PASS" : "FAIL") checks=\(checks) failures=\(failures)")
     }
 
-    // MARK: - Isolation test (follow-up to the Stufe-1 finding)
+    // MARK: - Isolation test (follow-up to the stage-1 finding)
 
-    /// Stufe 1 found that the VERTICAL rates of our self-built two-layer map
+    /// stage 1 found that the VERTICAL rates of our self-built two-layer map
     /// were ignored (physicalSize height = full, farCorner.y = identity) while
     /// horizontal worked. This builds a matrix of map variants and logs each
     /// map's self-reported geometry, to isolate WHERE vertical rates get lost:
     /// per axis (H-only vs V-only), per layer count (1 vs 2), and per
     /// construction API (Swift subscript assignment vs the pointer initializer
-    /// the game uses in visionos_angle.mm). No rendering needed — Stufe 1
+    /// the game uses in visionos_angle.mm). No rendering needed — stage 1
     /// proved rendering follows the map's own physicalCoordinates answers.
     /// Logged with prefix [mv-iso]; run with VC_MV_SPIKE=1 or =2.
     static func isolationTest(device: MTLDevice) {
@@ -444,7 +444,7 @@ enum MultiviewSpike {
     }
 
     private static func logMapGeometry(_ map: MTLRasterizationRateMap, instanced: Bool) {
-        // Side quest (Stufe-0 curiosity): compare each axis's reported physical
+        // Side quest (stage-0 curiosity): compare each axis's reported physical
         // size against the integral of the rates, to see whether width and
         // height quantize differently.
         var falloffSum: Float = 0

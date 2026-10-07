@@ -395,7 +395,7 @@ actor Renderer {
         worldTracking = WorldTrackingProvider()
         print("[vc-stats] VC_DEBUG_STATS \(vcDebugStats ? "ENABLED" : "disabled"), budget=\(vcFrameBudgetMs) ms")
         Self.logMultiviewCaps(device: device)
-        // VC_MV_SPIKE=1 -> isolation matrix + full Stufe-1 bar test (amplification);
+        // VC_MV_SPIKE=1 -> isolation matrix + full stage-1 bar test (amplification);
         // VC_MV_SPIKE=2 -> isolation matrix only;
         // VC_MV_SPIKE=3 -> instanced layer-routing test (ANGLE's multiview
         //                  emulation pattern: render_target_array_index from
@@ -411,7 +411,7 @@ actor Renderer {
         }
     }
 
-    // Multiview plan, Stufe 0: pure capability queries, no render-path changes.
+    // Multiview plan, stage 0: pure capability queries, no render-path changes.
     // Logged once at startup; filter the Xcode console for "mv-caps".
     private static func logMultiviewCaps(device: MTLDevice) {
         let families: [(String, MTLGPUFamily)] = [
@@ -438,7 +438,7 @@ actor Renderer {
         // Self-built two-layer map: layer 0 uniform 1.0, layer 1 with an edge
         // falloff. Different physical sizes per layer prove the layers are
         // honored independently — creation alone doesn't prove rendering works
-        // (that's Stufe 1), but a nil here would kill the plan early.
+        // (that's stage 1), but a nil here would kill the plan early.
         let zones = 8
         let layer0 = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSizeMake(zones, zones, 0))
         let layer1 = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSizeMake(zones, zones, 0))
@@ -705,7 +705,7 @@ actor Renderer {
                 let phys = rm.physicalSize(layer: 0)
                 let scr = rm.screenSize
                 print("[vc-rq] rateMap physical=\(phys.width)x\(phys.height) screen=\(scr.width)x\(scr.height) drawableTex=\(tex.width)x\(tex.height)")
-                // Multiview plan, Stufe 0: what the compositor's own rate map
+                // Multiview plan, stage 0: what the compositor's own rate map
                 // reports about layering — the reference our self-built map
                 // must match.
                 let perLayer = (0..<rm.layerCount)
