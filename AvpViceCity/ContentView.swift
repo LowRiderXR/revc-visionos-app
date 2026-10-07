@@ -193,10 +193,10 @@ struct ContentView: View {
                 // The Rockstar Store "Grand Theft Auto: The Trilogy" is the classic 2005
                 // compilation of the original games (checked 2026-10-05), not the Definitive Edition.
                 if gameInstalled {
-                    Text("To replace, choose a ZIP of your Vice City PC folder, for example from iCloud Drive. Original PC version only, not the Definitive Edition ([Rockstar Store](https://store.rockstargames.com/de/game/buy-grand-theft-auto-the-trilogy)).")
+                    Text("To replace, choose a ZIP of your Vice City PC folder, for example from iCloud Drive. Original PC version only, not the Definitive Edition ([Rockstar Store](https://store.rockstargames.com/game/buy-grand-theft-auto-the-trilogy)).")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Text("To install, choose a ZIP of your Vice City PC folder, for example from iCloud Drive. You need the original PC version, not the Definitive Edition; it is sold as [Grand Theft Auto: The Trilogy](https://store.rockstargames.com/de/game/buy-grand-theft-auto-the-trilogy) in the Rockstar Store. The (i) button explains the steps.")
+                    Text("To install, choose a ZIP of your Vice City PC folder, for example from iCloud Drive. You need the original PC version, not the Definitive Edition; it is sold as [Grand Theft Auto: The Trilogy](https://store.rockstargames.com/game/buy-grand-theft-auto-the-trilogy) in the Rockstar Store. The (i) button explains the steps.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -370,7 +370,7 @@ struct ContentView: View {
     private var instructionsPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Where to find the game files").font(.headline)
-            Text("You need the original PC version of GTA Vice City. The Definitive Edition does not work. The original is sold as [Grand Theft Auto: The Trilogy](https://store.rockstargames.com/de/game/buy-grand-theft-auto-the-trilogy) in the Rockstar Store.")
+            Text("You need the original PC version of GTA Vice City. The Definitive Edition does not work. The original is sold as [Grand Theft Auto: The Trilogy](https://store.rockstargames.com/game/buy-grand-theft-auto-the-trilogy) in the Rockstar Store.")
             Text("Rockstar Games Launcher: Settings → My installed games → Grand Theft Auto: Vice City → View installation folder.")
             Text("Retail disc: the installation folder, usually C:\\Program Files\\Rockstar Games\\Grand Theft Auto Vice City.")
             Text("Compress that folder into a ZIP file and bring it to the Vision Pro via iCloud Drive (recommended) or AirDrop. Then tap Install and select the ZIP.")

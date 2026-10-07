@@ -2,10 +2,10 @@ MIT License
 
 Copyright (c) 2026 Christian Schmid (LowRiderXR)
 
-This license covers the code written for this repository: the SwiftUI launcher, the
-Metal/CompositorServices renderer, the visionOS skeleton and glue code. It does NOT
-cover the reVC game engine sources (no license is granted for them, see
-THIRD_PARTY_NOTICES.md) nor the third-party libraries listed there.
+This license covers the code in this repository: the SwiftUI launcher, the
+Metal/CompositorServices renderer and the scripts. It does NOT cover the reVC game
+engine sources in the separate revc-visionos repository (no license is granted for
+them, see THIRD_PARTY_NOTICES.md) nor the third-party libraries listed there.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -53,7 +53,7 @@ echo "root: $ROOT"
 if command -v xcodebuild >/dev/null 2>&1; then
   XV=$(xcodebuild -version 2>/dev/null | head -1)
   MAJOR=$(echo "$XV" | sed -E 's/Xcode ([0-9]+).*/\1/')
-  if [ "${MAJOR:-0}" -ge 27 ]; then ok "$XV"; else warn "$XV found, Xcode 27 or newer is required (visionOS 26.5 SDK)"; fi
+  if [ "${MAJOR:-0}" -ge 27 ]; then ok "$XV"; else warn "$XV found, Xcode 27 or newer is required"; fi
 else
   warn "xcodebuild not found -- install Xcode 27 or newer"
 fi
@@ -129,8 +129,8 @@ cat <<EOF
 
 Done. Next steps:
   1. open $HERE/AvpViceCity.xcodeproj
-  2. Signing & Capabilities: select your team; change the bundle identifier prefix
-     (com.lowriderxr.AvpViceCity -> your own reverse-DNS prefix)
+  2. Signing & Capabilities: select your team; change the bundle identifier to
+     something of your own, for example com.yourname.revc
   3. scheme "AvpViceCity-Release", destination: your Apple Vision Pro, Run
   4. in the app: install the game data from a ZIP of your original PC copy (see README)
 EOF
