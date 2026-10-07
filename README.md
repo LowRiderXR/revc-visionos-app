@@ -40,6 +40,8 @@ classic PC version of GTA Vice City.
     ./setup.sh
 
 `setup.sh` downloads the engine and the prebuilt libraries. This takes a few minutes.
+Git's note about a "detached HEAD" is expected: you are checking out a release tag, not a
+branch.
 
 ## 3. Build and install the app
 

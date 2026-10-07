@@ -51,7 +51,9 @@ echo "root: $ROOT"
 
 # --- 1. toolchain -------------------------------------------------------------------
 if command -v xcodebuild >/dev/null 2>&1; then
-  XV=$(xcodebuild -version 2>/dev/null | head -1)
+  # sed -n 1p reads the whole input: with `head -1` xcodebuild got SIGPIPE on its second
+  # line and `pipefail` killed the script (exit 141, a race -- seen in the dress rehearsal).
+  XV=$(xcodebuild -version 2>/dev/null | sed -n 1p)
   MAJOR=$(echo "$XV" | sed -E 's/Xcode ([0-9]+).*/\1/')
   if [ "${MAJOR:-0}" -ge 27 ]; then ok "$XV"; else warn "$XV found, Xcode 27 or newer is required"; fi
 else
