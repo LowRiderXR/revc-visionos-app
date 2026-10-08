@@ -1524,10 +1524,18 @@ actor Renderer {
         for drawable in drawables {
             let renderPassDescriptor = MTLRenderPassDescriptor()
             renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
-            renderPassDescriptor.colorAttachments[0].loadAction = .load
+            // This is the first pass that touches the drawable in a stereo frame, so CLEAR
+            // it: the compositor's drawable contents are undefined, and the quad does not
+            // cover the whole frustum (it is sized to the symmetric FOV scale p0/p5 while
+            // the real per-eye frustum is off-centre, more so downwards). With .load the
+            // uncovered band showed stale/undefined pixels -- visible on the M2 during the
+            // black fade-in as "seeing through below the black plane" (2026-10-08).
+            renderPassDescriptor.colorAttachments[0].loadAction = .clear
+            renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
             renderPassDescriptor.colorAttachments[0].storeAction = .store
             renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
-            renderPassDescriptor.depthAttachment.loadAction = .load
+            renderPassDescriptor.depthAttachment.loadAction = .clear
+            renderPassDescriptor.depthAttachment.clearDepth = 0.0   // reverse-Z: 0 = far
             renderPassDescriptor.depthAttachment.storeAction = .store
             renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
             if layerRenderer.configuration.layout == .layered {
