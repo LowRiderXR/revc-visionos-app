@@ -35,7 +35,7 @@ classic PC version of GTA Vice City.
 ## 2. Get the code
 
     mkdir revc && cd revc
-    git clone --branch v1.0-rc1 https://github.com/LowRiderXR/revc-visionos-app.git AvpViceCity
+    git clone --branch v1.0 https://github.com/LowRiderXR/revc-visionos-app.git AvpViceCity
     cd AvpViceCity
     ./setup.sh
 
@@ -76,7 +76,7 @@ scope, then aim with your head and just look at the target.
 
 ## For developers
 
-Every release carries the same tag in all four repositories (`v1.0-rc1` today); `setup.sh`
+Every release carries the same tag in all four repositories (`v1.0` today); `setup.sh`
 checks the engine out at that tag so sources and prebuilt binaries match. The Xcode project
 refers to the engine with relative paths, so the folders must be siblings:
 

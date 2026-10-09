@@ -21,7 +21,7 @@
 #   --check  only verify the layout and checksums, download/clone nothing
 set -euo pipefail
 
-DEFAULT_TAG="v1.0-rc1"      # <- bump for the next release (same tag in all four repos)
+DEFAULT_TAG="v1.0"      # <- bump for the next release (same tag in all four repos)
 APP_REPO="LowRiderXR/revc-visionos-app"
 ENGINE_REPO="https://github.com/LowRiderXR/revc-visionos.git"
 ASSETS=(ANGLE_libEGL.xcframework.zip ANGLE_libGLESv2.xcframework.zip libopenal.a libalsoft.fmt.a)
