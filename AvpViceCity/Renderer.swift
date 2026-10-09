@@ -322,6 +322,7 @@ actor Renderer {
     var heldWaitValue: UInt64 = 0
     var hasHeldFrame = false
     var heldEyeCount: UInt32 = 1           // 1 = mono/cinema, 2 = stereo array; drives the display path
+    var heldWorldValid = false             // the held frame's eye slices were rendered (C: world_valid)
     var didLogStereoDisplay = false
 
 
@@ -751,21 +752,10 @@ actor Renderer {
                 print("[vc-quad] EMPTY frame: queryDeviceAnchor returned nil (provider not running) -> drawable dropped")
             }
             frame.startSubmission()
+            // Opaque black with cleared depth (the compositor reprojects with the depth
+            // texture; an uncleared one is undefined), then present so the frame completes.
+            encodeBlackFrame(drawables: drawables, commandBuffer: commandBuffer, label: "Empty frame (awaiting device anchor)")
             for drawable in drawables {
-                let clearPass = MTLRenderPassDescriptor()
-                clearPass.colorAttachments[0].texture = drawable.colorTextures[0]
-                clearPass.colorAttachments[0].loadAction = .clear
-                clearPass.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
-                clearPass.colorAttachments[0].storeAction = .store
-                clearPass.rasterizationRateMap = drawable.rasterizationRateMaps.first
-                if layerRenderer.configuration.layout == .layered {
-                    clearPass.renderTargetArrayLength = drawable.views.count
-                }
-                // Encode just the clear, then present so the frame is completed.
-                if let clearEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: clearPass) {
-                    clearEncoder.label = "Empty frame (awaiting device anchor)"
-                    clearEncoder.endEncoding()
-                }
                 drawable.encodePresent(commandBuffer: commandBuffer)
             }
             committedFrameIndex += 1
@@ -845,13 +835,18 @@ actor Renderer {
         // Base pass: clear the drawable's colour/depth so the (optional) test
         // triangle and the game quad can .load onto a clean target. Presentation
         // happens once, AFTER all content passes (see renderFrame) — never here.
-        // Colour alpha stays 0 so passthrough shows around the screen; depth is
-        // reverse-Z (clear 0). Single-sample straight into the drawable textures
-        // (the removed template cube was the only MSAA user).
+        // Cinema: colour alpha 0 so passthrough shows around the 2.5 m screen. Stereo: OPAQUE
+        // black (alpha 1). Every stereo content pass that .loads onto this base (splash quad,
+        // HUD/menu panel, stats) leaves the band outside its quad at the base value; with
+        // alpha 0 that band was transparent during the title/menu, the loading splash and
+        // the splash-target fades -- "seeing through under the black plane" (M2, 2026-10-09).
+        // Depth is reverse-Z (clear 0 = far). Single-sample straight into the drawable
+        // textures (the removed template cube was the only MSAA user).
+        let baseAlpha: Double = vc_render_mode() == VC_MODE_STEREO ? 1.0 : 0.0
         let renderPassDescriptor = MTLRenderPassDescriptor()
         renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
         renderPassDescriptor.colorAttachments[0].loadAction = .clear
-        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
+        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: baseAlpha)
         renderPassDescriptor.colorAttachments[0].storeAction = .store
         renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
         renderPassDescriptor.depthAttachment.loadAction = .clear
@@ -1164,6 +1159,7 @@ actor Renderer {
             heldIndex = ready.index
             heldWaitValue = ready.wait_value
             heldEyeCount = ready.eye_count   // the C side decides mono (1) vs stereo (2)
+            heldWorldValid = ready.world_valid != 0
             hasHeldFrame = true
 
             // Reprojection fix: the anchor this held frame was RENDERED with. Exact key
@@ -1334,21 +1330,7 @@ actor Renderer {
         // the world render resumes (the game's fade-in then takes over). Checked BEFORE the
         // eye_count branch because the loading frames are mono (eye_count=1).
         if vc_loading_active() != 0 {
-            for drawable in drawables {
-                let rp = MTLRenderPassDescriptor()
-                rp.colorAttachments[0].texture = drawable.colorTextures[0]
-                rp.colorAttachments[0].loadAction = .clear
-                rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-                rp.colorAttachments[0].storeAction = .store
-                rp.rasterizationRateMap = drawable.rasterizationRateMaps.first
-                if layerRenderer.configuration.layout == .layered {
-                    rp.renderTargetArrayLength = drawable.views.count
-                }
-                if let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) {
-                    enc.label = "Load black"
-                    enc.endEncoding()
-                }
-            }
+            encodeBlackFrame(drawables: drawables, commandBuffer: commandBuffer, label: "Load black")
             return
         }
 
@@ -1387,28 +1369,26 @@ actor Renderer {
             // anyway, so we only hide near-black frames.
             if splashHoldFrames > 0 {
                 splashHoldFrames -= 1
-                for drawable in drawables {
-                    let rp = MTLRenderPassDescriptor()
-                    rp.colorAttachments[0].texture = drawable.colorTextures[0]
-                    rp.colorAttachments[0].loadAction = .clear
-                    rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-                    rp.colorAttachments[0].storeAction = .store
-                    rp.rasterizationRateMap = drawable.rasterizationRateMaps.first
-                    if layerRenderer.configuration.layout == .layered {
-                        rp.renderTargetArrayLength = drawable.views.count
-                    }
-                    if let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) {
-                        enc.label = "Splash black hold"
-                        enc.endEncoding()
-                    }
-                }
+                encodeBlackFrame(drawables: drawables, commandBuffer: commandBuffer, label: "Splash black hold")
                 return
             }
 
             let menuActive = vc_menu_active() != 0
+            // Never display slices that were not rendered for the held publish: frontend,
+            // splash and loading frames carry eye_count=2 but no eye passes, so their array
+            // slices are stale or (first New Game after launch) never written at all. The
+            // fixed black hold above only covers a few frames; when the first world frame
+            // takes longer (New Game: shader builds, streaming) the stale slices showed as a
+            // flash (2026-10-09). State-driven: black until a world_valid frame is held. The
+            // frozen-world menu picture counts as valid once captured from a valid frame.
+            let worldValid = (menuActive && !vcMenuLiveWorld && frozenWorldTexture != nil) || heldWorldValid
+            if !worldValid {
+                encodeBlackFrame(drawables: drawables, commandBuffer: commandBuffer, label: "No valid world yet")
+                return
+            }
             if menuActive {
                 // Frozen picture only when the game does NOT render under the menu.
-                if !vcMenuLiveWorld, frozenWorldTexture == nil { frozenWorldTexture = gameTexture }
+                if !vcMenuLiveWorld, frozenWorldTexture == nil, heldWorldValid { frozenWorldTexture = gameTexture }
                 // Freeze the (upright) head pose once per menu session; the panel is drawn
                 // relative to it (see menuViewMatrix).
                 if menuFrozenPose == nil, let a = drawables.first?.deviceAnchor {
@@ -1637,6 +1617,32 @@ actor Renderer {
             renderEncoder.setFragmentTexture(texture, index: 0)
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()
+        }
+    }
+
+    /// Opaque black frame: colour black with alpha 1 AND depth cleared (reverse-Z far), over
+    /// the whole drawable including the band outside the quads. Used for the load hold, the
+    /// splash hold and the "no valid world yet" state, so no path can show stale slices or a
+    /// transparent region.
+    private func encodeBlackFrame(drawables: [LayerRenderer.Drawable], commandBuffer: MTLCommandBuffer, label: String) {
+        for drawable in drawables {
+            let rp = MTLRenderPassDescriptor()
+            rp.colorAttachments[0].texture = drawable.colorTextures[0]
+            rp.colorAttachments[0].loadAction = .clear
+            rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+            rp.colorAttachments[0].storeAction = .store
+            rp.depthAttachment.texture = drawable.depthTextures[0]
+            rp.depthAttachment.loadAction = .clear
+            rp.depthAttachment.clearDepth = 0.0   // reverse-Z: 0 = far
+            rp.depthAttachment.storeAction = .store
+            rp.rasterizationRateMap = drawable.rasterizationRateMaps.first
+            if layerRenderer.configuration.layout == .layered {
+                rp.renderTargetArrayLength = drawable.views.count
+            }
+            if let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) {
+                enc.label = label
+                enc.endEncoding()
+            }
         }
     }
 

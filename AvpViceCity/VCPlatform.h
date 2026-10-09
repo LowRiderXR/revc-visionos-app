@@ -85,6 +85,9 @@ typedef struct vc_ready_frame_t {
                            ///<   matches it to its DeviceAnchor ring and reports THAT anchor
                            ///<   as drawable.deviceAnchor, so the compositor reprojects the
                            ///<   slice from its true render pose (fixes the head-turn double).
+    uint32_t world_valid;  ///< 1 = the stereo eye passes rendered this buffer's slices for this
+                           ///<   publish; 0 = frontend/splash/loading frame (eye_count still 2,
+                           ///<   slices stale or never rendered) -- the host shows black instead.
 } vc_ready_frame_t;
 
 /// Non-blocking. Fills `out` with the most recently finished buffer and returns
