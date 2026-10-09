@@ -52,6 +52,10 @@ nonisolated let vcHeadTrackingMode: Int = {
 // comes only from the slice content = volumetric. Cinema is unaffected (its quad
 // stays at 2.5 m). Tunable so a too-far quad clipped past the compositor far plane
 // (reverse-Z -> black) can be pulled back on device. VC_CANVAS_DEPTH, default 500.
+// Diagnostic clear colour for the stereo pass (see encodeGameStereoScreen). Default off.
+nonisolated let vcStereoClearMagenta: Bool = {
+    ProcessInfo.processInfo.environment["VC_STEREO_CLEAR"] == "magenta"
+}()
 nonisolated let vcCanvasDepth: Float = {
     if let s = ProcessInfo.processInfo.environment["VC_CANVAS_DEPTH"], let d = Float(s), d > 0 {
         return d
@@ -116,7 +120,7 @@ nonisolated let vcHudSize: Float = {
     if let s = ProcessInfo.processInfo.environment["VC_HUD_SIZE"], let d = Float(s), d >= 0 {
         return d
     }
-    return 0.4
+    return 0.35   // keep in sync with GameSettings.hudSizeDefault
 }()
 // Draw the stereo HUD overlay at all. Default on. VC_HUD=0 disables it, to A/B
 // whether a black screen is the HUD layer covering the world (overlay opaque) vs a
@@ -1531,7 +1535,12 @@ actor Renderer {
             // uncovered band showed stale/undefined pixels -- visible on the M2 during the
             // black fade-in as "seeing through below the black plane" (2026-10-08).
             renderPassDescriptor.colorAttachments[0].loadAction = .clear
-            renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+            // Diagnostic: VC_STEREO_CLEAR=magenta paints the drawable area the quad does NOT
+            // cover in magenta, so a head-locked stripe can be attributed to the quad edge
+            // (magenta) or to slice content (keeps its colour). Default black.
+            renderPassDescriptor.colorAttachments[0].clearColor = vcStereoClearMagenta
+                ? MTLClearColor(red: 1, green: 0, blue: 1, alpha: 1)
+                : MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
             renderPassDescriptor.colorAttachments[0].storeAction = .store
             renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
             renderPassDescriptor.depthAttachment.loadAction = .clear

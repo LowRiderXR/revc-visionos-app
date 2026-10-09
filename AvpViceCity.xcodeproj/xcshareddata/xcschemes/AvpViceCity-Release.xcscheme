@@ -60,6 +60,16 @@
             isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
+            key = "VC_SUN_CLAMP"
+            value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DEBUG_HOUR"
+            value = "19"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "VC_DEBUG_TRIANGLE"
             value = "0"
             isEnabled = "NO">
@@ -167,22 +177,22 @@
          <EnvironmentVariable
             key = "VC_HUD_DEPTH"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_HUD_SIZE"
-            value = "0.4"
-            isEnabled = "YES">
+            value = "0.35"
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MENU_DEPTH"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MENU_SIZE"
             value = "0.25"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_STEREO_CAMERA"
@@ -362,12 +372,12 @@
          <EnvironmentVariable
             key = "VC_MAP_LEGEND"
             value = "100"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MAP_LEGEND_SCALE"
             value = "0.6"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_RADAR_FILTER"
@@ -537,6 +547,21 @@
          <EnvironmentVariable
             key = "VC_DEV_WIPE_GAME"
             value = "1"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_SUN_CLAMP"
+            value = "0"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_DEBUG_HOUR"
+            value = "19"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VC_STEREO_CLEAR"
+            value = "magenta"
             isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>

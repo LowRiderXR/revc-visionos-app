@@ -30,7 +30,7 @@ class AppModel {
 ///   VC_AIM_SENSITIVITY  -> Cam.cpp `vcAimStickScale()` (right-stick aim/look speed, 1.0 = stock)
 /// Call once at launch and again right before opening the immersive space.
 enum GameSettings {
-    static let hudSizeDefault: Double = 0.4
+    static let hudSizeDefault: Double = 0.35   // both device classes (user, fresh-install test 2026-10-08)
     /// MSAA default per device (multiview-plan.md, device defaults 2026-09-29): M5 measured
     /// with MSAA 4 on the reference route (90 fps open, 84 in the dense centre, CPU-bound
     /// there, not GPU) -> 4. M2 assumed, not measured -> 2. Anything that is not an M2 is
