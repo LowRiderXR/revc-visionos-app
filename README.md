@@ -1,7 +1,7 @@
 # reVC for visionOS
 
 A port of **reVC**, the reverse-engineered Grand Theft Auto: Vice City engine of the re3
-project, to Apple Vision Pro: stereo rendering in a full immersive space, head tracking,
+project, to Apple Vision Pro: stereo rendering in a full immersive space (third-person), head tracking,
 foveated rendering, game-controller input, and a launcher for settings, save games and
 the game data.
 
@@ -48,7 +48,7 @@ branch.
 1. Open `AvpViceCity.xcodeproj`.
 2. Select the target AvpViceCity → Signing & Capabilities: choose your team and change
    the bundle identifier to something of your own, for example `com.yourname.revc`.
-3. In the toolbar, choose the scheme AvpViceCity-Release and your Vision Pro as destination.
+3. In the toolbar, choose the scheme **AvpViceCity-Release** and your Vision Pro as destination.
 4. Press Run (⌘R). The app appears on the Vision Pro as "reVC for visionOS".
 
 ## 4. Install the game data (once)
@@ -71,6 +71,8 @@ saves and game data — export first.
 
 Aiming with the gamepad is hard in VR. It is much easier with a rifle: press R1 for the
 scope, then aim with your head and just look at the target.
+
+**First-time stutters:** After a fresh install, the game may stutter briefly the first time something new appears (rain, explosions, interiors, etc.) while shaders are compiled. This happens only once; afterwards it runs smoothly.
 
 ## For developers
 
@@ -106,7 +108,7 @@ patch chain, gn args, retarget to visionOS).
 
 This project is provided "as is", without warranty of any kind. Use it
 at your own risk. The author is not liable for any damage, data loss or
-other issues arising from building, installing or using it.
+other issues arising from building, installing or using it. 
 
 ## License
 
