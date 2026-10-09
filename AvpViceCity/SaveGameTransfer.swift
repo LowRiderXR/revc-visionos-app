@@ -6,11 +6,15 @@
 //
 //  Where the game keeps them on visionOS (see visionos.cpp vc_fs / _psGetUserFilesFolder):
 //    Documents/GTA Vice City User Files/GTAVCsf1.b ... GTAVCsf8.b   save slots
-//    Documents/GTA Vice City User Files/gta_vc.set                  menu settings
-//    <data root>/reVC.ini                                            reVC settings (data root =
-//                                                                    Documents, Documents/Game or
-//                                                                    Documents/GTAVC, whichever
-//                                                                    holds models/)
+//    Documents/GTA Vice City User Files/reVC.ini                    ALL settings (the game's
+//                                                                    LoadINISettings reads/writes
+//                                                                    it there since 2026-10-04)
+//    Documents/GTA Vice City User Files/gta_vc.set                  read-only compatibility file
+//                                                                    (never written on visionOS;
+//                                                                    only present when imported)
+//  An older root-level reVC.ini (<data root> = Documents, Documents/Game or Documents/GTAVC)
+//  is exported too when no user-folder one exists; imports always land in the user folder,
+//  otherwise the game would never see them (finding 2026-10-09).
 //
 //  Export copies saves + both settings files into a NEW time-stamped sub-folder of the chosen
 //  folder, so earlier backups are never overwritten. Import takes the saves by default and the
@@ -97,11 +101,17 @@ enum SaveGameStore {
         return items.filter { slotNumber(of: $0) != nil }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// Local settings files (gta_vc.set in the user folder, reVC.ini at the data root).
+    /// Local settings files: gta_vc.set and reVC.ini from the user folder; an old root-level
+    /// reVC.ini only as a fallback when the user folder has none.
     static func localSettings() -> [URL] {
         var out: [URL] = []
-        if let u = userFilesFolder?.appendingPathComponent("gta_vc.set"), FileManager.default.fileExists(atPath: u.path) { out.append(u) }
-        if let i = dataRoot?.appendingPathComponent("reVC.ini"), FileManager.default.fileExists(atPath: i.path) { out.append(i) }
+        let fm = FileManager.default
+        if let u = userFilesFolder?.appendingPathComponent("gta_vc.set"), fm.fileExists(atPath: u.path) { out.append(u) }
+        if let i = userFilesFolder?.appendingPathComponent("reVC.ini"), fm.fileExists(atPath: i.path) {
+            out.append(i)
+        } else if let i = dataRoot?.appendingPathComponent("reVC.ini"), fm.fileExists(atPath: i.path) {
+            out.append(i)
+        }
         return out
     }
 
@@ -214,9 +224,11 @@ enum SaveGameStore {
         return SaveImportResult(importedSaves: nSaves, importedSettings: nSettings, backupFolder: backupFolder)
     }
 
+    /// Both settings files live in the user folder (the game reads reVC.ini only there; a copy
+    /// at the data root would be ignored). `root` is kept for the call sites, unused.
     private static func destination(forSettings src: URL, userFolder: URL, root: URL) -> URL {
         src.lastPathComponent.lowercased() == "revc.ini"
-            ? root.appendingPathComponent("reVC.ini")
+            ? userFolder.appendingPathComponent("reVC.ini")
             : userFolder.appendingPathComponent(src.lastPathComponent)
     }
 }
