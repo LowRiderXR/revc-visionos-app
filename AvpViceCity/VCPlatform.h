@@ -157,6 +157,12 @@ typedef enum vc_gamepad_type_t {
 } vc_gamepad_type_t;
 void vc_set_gamepad_type(int type);
 
+/// Vibration, the other direction: reVC -> host. Called on the game thread from
+/// CapturePad once per frame in which the motor strength changes (0..1, ShakeFreq/255;
+/// 0 = stop). Implemented in Swift (GamepadInput.swift, @_cdecl) on top of the
+/// controller's CHHapticEngine; the call only enqueues and never blocks the game thread.
+void vc_set_gamepad_rumble(float intensity);
+
 // ---------------------------------------------------------------------------
 // Render mode (cinema vs stereo). Read once from VC_RENDER_MODE at startup:
 // default STEREO; only VC_RENDER_MODE=cinema selects the single flat cinema

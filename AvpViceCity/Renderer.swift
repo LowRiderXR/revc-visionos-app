@@ -1841,12 +1841,17 @@ actor Renderer {
                 // re-init), so re-entering from the launcher would just render black.
                 // Terminate instead -- a fresh launch starts clean.
                 print("[vc-loop] layer invalidated (Digital Crown) -> terminating app")
+                GamepadRumble.shared.stopForExit()
                 exit(0)
             } else if layerRenderer.state == .paused {
                 Task { @MainActor in
                     appModel.immersiveSpaceState = .inTransition
                 }
+                // No vibration while hidden; the game thread keeps running and its
+                // strength is re-applied once the layer runs again.
+                GamepadRumble.shared.setLayerPaused(true)
                 layerRenderer.waitUntilRunning()
+                GamepadRumble.shared.setLayerPaused(false)
                 continue
             } else if vc_wants_quit() != 0 {
                 // Game asked to quit (pause-menu Quit -> RsGlobal.quit). There is no
@@ -1854,6 +1859,7 @@ actor Renderer {
                 // re-init in-process), so terminate: a fresh launch starts clean. The
                 // game thread has already unwound its own loop on RsGlobal.quit.
                 print("[vc-loop] quit requested -> terminating app")
+                GamepadRumble.shared.stopForExit()
                 exit(0)
             } else {
                 Task { @MainActor in
