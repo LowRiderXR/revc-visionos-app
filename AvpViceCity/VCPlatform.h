@@ -140,6 +140,23 @@ typedef struct vc_gamepad_t {
 /// here and reads there never overlap. Pass NULL is a no-op.
 void vc_set_gamepad_state(const vc_gamepad_t *state);
 
+/// Controller type for the menu picture ("Controller settings") and the button icons of
+/// the in-game hints. Mirrors CMenuManager's CONTROLLER_* enum (Frontend.h) -- keep in
+/// sync. GamepadInput.swift derives it from the class of the GC extended profile
+/// (GCDualSenseGamepad / GCDualShockGamepad -> DualShock 4, GCXboxGamepad -> Xbox One,
+/// Nintendo -> Switch, anything else -> Xbox One, whose A/B/X/Y names match the GC
+/// profile) and reports it on connect and on every controller change. The reVC side
+/// buffers it and applies it on the game thread (CapturePad).
+typedef enum vc_gamepad_type_t {
+    VC_GAMEPAD_DUALSHOCK2 = 0,
+    VC_GAMEPAD_DUALSHOCK3,
+    VC_GAMEPAD_DUALSHOCK4,
+    VC_GAMEPAD_XBOX360,
+    VC_GAMEPAD_XBOXONE,
+    VC_GAMEPAD_SWITCH,
+} vc_gamepad_type_t;
+void vc_set_gamepad_type(int type);
+
 // ---------------------------------------------------------------------------
 // Render mode (cinema vs stereo). Read once from VC_RENDER_MODE at startup:
 // default STEREO; only VC_RENDER_MODE=cinema selects the single flat cinema

@@ -67,6 +67,45 @@ branch.
 Use Export… and Import… in the launcher to back up your saves. Deleting the app also deletes
 saves and game data — export first.
 
+## Controls
+
+The game uses its original PlayStation 2 layout. Buttons cannot be remapped in this version;
+the layout is also shown in the game under Options → Controller Setup, with a picture of your
+controller. Xbox names first, PlayStation names in parentheses.
+
+| On foot | Button |
+|---|---|
+| Move | Left stick / D-pad |
+| Look around, first-person camera | Right stick |
+| Run | A (Cross) |
+| Attack / fire | B (Circle) |
+| Jump | X (Square) |
+| Enter vehicle | Y (Triangle) |
+| Target / lock on | RB (R1) |
+| Camera forward, confirm pickup | LB (L1) |
+| Previous / next weapon, previous / next target | LT / RT (L2 / R2) |
+| Crouch | L3 (press left stick) |
+| Look behind | R3 (press right stick) |
+| Sniper scope: zoom in / out | X / A (Square / Cross) — aim with your head |
+| Camera mode | View (Create / Share) |
+| Pause | Menu (Options) |
+
+| In a vehicle | Button |
+|---|---|
+| Steer, lean (bikes, boats, aircraft) | Left stick / D-pad |
+| Turret / camera, helicopter altitude | Right stick |
+| Accelerate | A (Cross) |
+| Brake / reverse | X (Square) |
+| Hand brake | RB (R1) |
+| Vehicle weapon / drive-by | B (Circle) |
+| Exit vehicle | Y (Triangle) |
+| Radio station | LB (L1) |
+| Look left / right | LT / RT (L2 / R2); both together: look behind |
+| Horn | L3 (press left stick) |
+| Start / stop side mission | R3 (press right stick) |
+| Camera mode | View (Create / Share) |
+| Pause | Menu (Options) |
+
 ## Tips
 
 Aiming with the gamepad is hard in VR. It is much easier with a rifle: press R1 for the

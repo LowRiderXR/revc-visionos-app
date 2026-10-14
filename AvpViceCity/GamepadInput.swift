@@ -57,11 +57,36 @@ final class GamepadInput: NSObject, @unchecked Sendable {
         print("[vc-input-swift] controller connected: \(controller.vendorName ?? "unknown") "
               + "category=\(controller.productCategory) profile=extendedGamepad")
 
+        reportType(controller, gamepad)
+
         gamepad.valueChangedHandler = { [weak self] pad, _ in
             self?.push(pad)
         }
         // Seed the initial state so the game sees a defined snapshot immediately.
         push(gamepad)
+    }
+
+    /// Controller type for the game's menu picture and in-game button icons, from the
+    /// class of the extended profile (the reliable signal; productCategory strings vary).
+    /// DualSense has no picture of its own in the game, the DualShock 4 one is the
+    /// nearest. Anything unknown is reported as Xbox One: its A/B/X/Y names are the GC
+    /// profile's own names. Sent on every attach, i.e. on connect and on every switch to
+    /// another controller.
+    private func reportType(_ controller: GCController, _ gp: GCExtendedGamepad) {
+        let type: vc_gamepad_type_t
+        let name: String
+        if gp is GCDualSenseGamepad || gp is GCDualShockGamepad {
+            type = VC_GAMEPAD_DUALSHOCK4; name = "DualShock 4 / DualSense"
+        } else if gp is GCXboxGamepad {
+            type = VC_GAMEPAD_XBOXONE; name = "Xbox"
+        } else if (controller.vendorName ?? "").localizedCaseInsensitiveContains("nintendo")
+                    || controller.productCategory.localizedCaseInsensitiveContains("switch") {
+            type = VC_GAMEPAD_SWITCH; name = "Nintendo Switch"
+        } else {
+            type = VC_GAMEPAD_XBOXONE; name = "generic -> Xbox layout"
+        }
+        vc_set_gamepad_type(Int32(type.rawValue))
+        print("[vc-input-swift] gamepad type: \(name) (\(type.rawValue))")
     }
 
     /// Fill a vc_gamepad_t from the extended profile and hand it to the C side.
