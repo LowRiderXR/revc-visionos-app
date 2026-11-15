@@ -21,6 +21,10 @@ struct ContentView: View {
     @AppStorage("VC_MSAA") private var msaa: Int = GameSettings.msaaDefault
     @AppStorage("VC_RES") private var res: Int = GameSettings.resDefault
     @AppStorage("VC_AIM_SENSITIVITY") private var aimSensitivity: Double = GameSettings.aimSensitivityDefault
+    #if VC_DIAGNOSTICS
+    // Stutter recorder toggle (Diagnostics configuration only; the whole block is absent in Release).
+    @AppStorage(GameSettings.diagRecordKey) private var diagRecord: Bool = false
+    #endif
 
     // Save-game export / import (SaveGameTransfer.swift). Folder pickers via fileImporter;
     // the import shows its plan first and takes settings only when the toggle is on.
@@ -51,6 +55,16 @@ struct ContentView: View {
         VStack(spacing: 22) {
             Text("reVC for visionOS")
                 .font(.title2).fontWeight(.bold)
+
+            #if VC_DIAGNOSTICS
+            // Unmissable banner so a Diagnostics build is never mistaken for a Release build.
+            Label("DIAGNOSTICS BUILD", systemImage: "waveform.path.ecg")
+                .font(.headline).fontWeight(.bold)
+                .foregroundStyle(.black)
+                .padding(.horizontal, 14).padding(.vertical, 6)
+                .background(.orange, in: Capsule())
+                .accessibilityLabel("Diagnostics build")
+            #endif
 
             // Two columns: render/controls settings left, save games + game files right.
             // The right-hand cards stretch to the left column's height so both columns
@@ -107,6 +121,16 @@ struct ContentView: View {
                     }
                     Slider(value: $aimSensitivity, in: 0.1...2.0, step: 0.05)
                 }
+
+                #if VC_DIAGNOSTICS
+                // Diagnostics build only: background stutter recorder (reVC vc_diag.mm). Takes
+                // effect at the next game start; writes Documents/Diagnostics/stutter.log.
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Record stutter diagnostics", isOn: $diagRecord)
+                    Text("Diagnostics build only. Writes one summary line per second to Documents/Diagnostics/stutter.log while playing.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                #endif
 
                 // Back to the device defaults (M5: MSAA 4; M2: MSAA 2). Launcher settings
                 // only -- the in-game options (draw distance, map memory) have their own

@@ -25,6 +25,7 @@ typedef NSInteger EnumBackingType;
 // Expose the plain-C renderer boundary to Swift via this bridging header.
 // Guarded so it never enters Metal shader compilation.
 #include "VCPlatform.h"
+#include "VCDiagnostics.h"   // empty unless the Diagnostics configuration defines VC_DIAGNOSTICS
 #endif
 
 #endif /* ShaderTypes_h */

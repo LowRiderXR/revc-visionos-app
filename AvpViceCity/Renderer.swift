@@ -1850,7 +1850,13 @@ actor Renderer {
                 // No vibration while hidden; the game thread keeps running and its
                 // strength is re-applied once the layer runs again.
                 GamepadRumble.shared.setLayerPaused(true)
+                #if VC_DIAGNOSTICS
+                vc_diag_event(VC_DIAG_EV_LAYER_PAUSED, 0, 0, 0)   // stutter recorder (Diagnostics build only)
+                #endif
                 layerRenderer.waitUntilRunning()
+                #if VC_DIAGNOSTICS
+                vc_diag_event(VC_DIAG_EV_LAYER_RESUMED, 0, 0, 0)
+                #endif
                 GamepadRumble.shared.setLayerPaused(false)
                 continue
             } else if vc_wants_quit() != 0 {

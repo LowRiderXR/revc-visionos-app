@@ -97,5 +97,16 @@ enum GameSettings {
         setenv("VC_MULTIVIEW", mv ? "1" : "0", 1)
         if mv { setenv("KL_GL_MULTIVIEW", "1", 1) } else { unsetenv("KL_GL_MULTIVIEW") }
         if schemeOff { print("[vc-launcher] VC_MULTIVIEW=0 from the scheme -> two-pass fallback") }
+        #if VC_DIAGNOSTICS
+        // Stutter recorder (Diagnostics configuration only): the launcher toggle "Record stutter
+        // diagnostics" -> VC_DIAG_RECORD, read by vc_diag_init() on the game thread. Works for
+        // launches from Xcode and from the headset alike, because this runs at app init.
+        setenv("VC_DIAG_RECORD", UserDefaults.standard.bool(forKey: diagRecordKey) ? "1" : "0", 1)
+        #endif
     }
+
+    #if VC_DIAGNOSTICS
+    /// UserDefaults key of the recorder toggle (default off). Diagnostics configuration only.
+    static let diagRecordKey = "VC_DIAG_RECORD"
+    #endif
 }

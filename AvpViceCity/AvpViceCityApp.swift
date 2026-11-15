@@ -56,6 +56,12 @@ struct AvpViceCityApp: App {
     @State private var appModel = AppModel()
 
     init() {
+        #if VC_DIAGNOSTICS
+        // Diagnostics configuration: say so once at launch, with the recorder's marker string
+        // (the same "[vc-diag]" that the Release-bundle cross-check greps for).
+        print("[vc-diag] DIAGNOSTICS BUILD (VC_DIAGNOSTICS) -- stutter recorder available, toggle 'Record stutter diagnostics' is \(UserDefaults.standard.bool(forKey: GameSettings.diagRecordKey) ? "ON" : "off")")
+        #endif
+
         // Persisted launch settings (VC_HUD_SIZE / VC_MSAA) -> environment, BEFORE any
         // consumer (drawable config, render loop, reVC) reads them.
         GameSettings.applyToEnvironment()
