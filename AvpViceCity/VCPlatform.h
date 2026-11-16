@@ -192,6 +192,13 @@ int vc_splash_active(void);
 /// 1 when verbose perf logging is enabled (env VC_PERF_LOG); gates host-side probes.
 int vc_perf_log(void);
 
+/// The presentation time of the compositor frame being rendered (seconds on the
+/// LayerRenderer clock; only differences are used). Called once per compositor frame from
+/// the render thread. Consecutive values differ by whole display periods, so this is the
+/// exact source for the display-rate estimate behind the game's frame cap; the acquire-call
+/// interval is only the fallback while no values arrive.
+void vc_note_presentation_time(double seconds);
+
 /// 1 when reVC scales its 2D layout (menu/HUD) with the 4:3 DESIGN aspect instead of the
 /// physical buffer aspect (env VC_HUD_ASPECT, default on, stereo only). The near-square
 /// buffer from VC_RES=2 up would otherwise push the 640-wide design off the right edge.

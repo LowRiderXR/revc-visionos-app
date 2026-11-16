@@ -745,6 +745,9 @@ actor Renderer {
         // render correctly, but a blank frame is better than none: present an
         // empty (black) frame so the pipeline keeps flowing.
         let presentationTime = drawables[0].frameTiming.presentationTime.timeInterval
+        // Display-rate estimate for the game's frame cap: the presentation schedule is exact
+        // (whole display periods apart), unlike the acquire-call timing of this thread.
+        vc_note_presentation_time(presentationTime)
         guard let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: presentationTime) else {
             let now = CFAbsoluteTimeGetCurrent()
             if now - lastPresentLogTime >= 1.0 {
