@@ -211,6 +211,13 @@ int vc_hud_aspect_fixed(void);
 /// so the host polls this each frame and dismisses the immersive space when set.
 int vc_wants_quit(void);
 
+/// Ordered engine shutdown before the host ends the process with _exit(0): pauses the audio
+/// device (silence), stops the game thread (waits at most `timeout_ms`), logs each step with
+/// a timestamp. The host must call _exit, not exit: the global destructors that exit() runs
+/// tear down OpenAL Soft before reVC's global audio manager uses it (abort on a destroyed
+/// mutex, 2026-11-16). Blocks the calling thread for up to timeout_ms.
+void vc_shutdown_for_exit(int timeout_ms);
+
 /// Nudge OpenAL across an AVAudioSession interruption. began=1 pauses the device; began=0
 /// resumes + resets the backend so its output AudioUnit restarts (reactivating the session
 /// alone leaves it stopped -> silent after the headset is re-donned). Safe to call from the

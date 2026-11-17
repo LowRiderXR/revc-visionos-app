@@ -1836,6 +1836,23 @@ actor Renderer {
         }
     }
 
+    /// End the process in order. Until 2026-11-16 this was a plain exit(0): exit() runs the
+    /// global destructors, and reVC's global audio manager then called into OpenAL Soft whose
+    /// own statics were already gone -> std::system_error "recursive_mutex lock failed" ->
+    /// abort, with the mixer scratching on torn-down state meanwhile. Now: rumble off, audio
+    /// device paused and game thread stopped on the C side (with a time limit), then _exit(0),
+    /// which runs no destructors. Each step logs with a timestamp ([vc-exit]).
+    private func shutdownAndExit(_ reason: String) -> Never {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let ms = { String(format: "%.0f ms", (CFAbsoluteTimeGetCurrent() - t0) * 1000.0) }
+        print("[vc-exit] \(reason) -> shutting down")
+        GamepadRumble.shared.stopForExit()
+        print("[vc-exit] rumble stopped (\(ms()))")
+        vc_shutdown_for_exit(800)   // audio paused, game thread stopped; logs its own steps
+        print("[vc-exit] engine stopped (\(ms())) -> _exit(0)")
+        _exit(0)
+    }
+
     func renderLoop() {
         while true {
             if layerRenderer.state == .invalidated {
@@ -1843,9 +1860,7 @@ actor Renderer {
                 // there is no clean in-process re-open (game singletons + ANGLE don't
                 // re-init), so re-entering from the launcher would just render black.
                 // Terminate instead -- a fresh launch starts clean.
-                print("[vc-loop] layer invalidated (Digital Crown) -> terminating app")
-                GamepadRumble.shared.stopForExit()
-                exit(0)
+                shutdownAndExit("layer invalidated (Digital Crown)")
             } else if layerRenderer.state == .paused {
                 Task { @MainActor in
                     appModel.immersiveSpaceState = .inTransition
@@ -1867,9 +1882,7 @@ actor Renderer {
                 // clean "resume from launcher" path (game singletons + ANGLE don't
                 // re-init in-process), so terminate: a fresh launch starts clean. The
                 // game thread has already unwound its own loop on RsGlobal.quit.
-                print("[vc-loop] quit requested -> terminating app")
-                GamepadRumble.shared.stopForExit()
-                exit(0)
+                shutdownAndExit("quit requested")
             } else {
                 Task { @MainActor in
                     if appModel.immersiveSpaceState != .open {
