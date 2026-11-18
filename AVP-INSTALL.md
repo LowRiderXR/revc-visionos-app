@@ -47,7 +47,7 @@ deletes the game data and the save games.
 Skip this step if the index tooling has already checked out the repository for you.
 
     mkdir revc && cd revc
-    git clone --branch v1.0.1 https://github.com/LowRiderXR/revc-visionos-app.git AvpViceCity
+    git clone --branch v1.0.2 https://github.com/LowRiderXR/revc-visionos-app.git AvpViceCity
     cd AvpViceCity
 
 Git's note about a "detached HEAD" is expected: you are checking out a release tag, not a
