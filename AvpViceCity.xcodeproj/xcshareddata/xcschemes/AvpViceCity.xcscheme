@@ -162,22 +162,22 @@
          <EnvironmentVariable
             key = "VC_HUD_DEPTH"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_HUD_SIZE"
             value = "0.4"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MENU_DEPTH"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MENU_SIZE"
             value = "0.25"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_STEREO_CAMERA"
@@ -272,7 +272,7 @@
          <EnvironmentVariable
             key = "VC_EYE_GPU"
             value = "2"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_FOVEATE"
@@ -357,12 +357,12 @@
          <EnvironmentVariable
             key = "VC_MAP_LEGEND"
             value = "100"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_MAP_LEGEND_SCALE"
             value = "0.6"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_RADAR_FILTER"
@@ -397,7 +397,7 @@
          <EnvironmentVariable
             key = "VC_WEATHER"
             value = "4"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "KL_ANGLE_VRR_TRACE"
@@ -467,7 +467,7 @@
          <EnvironmentVariable
             key = "VC_LOD_LOG"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_FOG_RADIAL"
@@ -477,12 +477,12 @@
          <EnvironmentVariable
             key = "VC_LOD_SCALE"
             value = "1.8"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_ISLAND_LOADING"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "VC_VEH_DIST"
