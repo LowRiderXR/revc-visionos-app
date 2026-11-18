@@ -666,10 +666,12 @@ actor Renderer {
         }
 
         // Compositor-pass GPU time, measured directly (not inferred from startframe).
-        // Always-on in stereo like [vc-frame], ~1 s cadence: min/max catch the cutscene
-        // spike, avg the steady cost. This is the baseline the foveation win is measured
-        // against — with vs. without a rate map on the same scene.
-        if vc_render_mode() == VC_MODE_STEREO {
+        // Stereo only, ~1 s cadence, gated behind VC_PERF_LOG like the other perf lines:
+        // min/max catch the cutscene spike, avg the steady cost. This is the baseline the
+        // foveation win is measured against — with vs. without a rate map on the same scene.
+        // The samples are still recorded every frame (overlay bars); only the drain and
+        // the print are gated.
+        if vc_render_mode() == VC_MODE_STEREO, vc_perf_log() != 0 {
             let nowGpu = CFAbsoluteTimeGetCurrent()
             if nowGpu - lastGpuLogTime >= 1.0, let g = frameStats.drainGPUStats() {
                 lastGpuLogTime = nowGpu

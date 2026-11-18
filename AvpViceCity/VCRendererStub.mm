@@ -304,8 +304,9 @@ void vc_renderer_render(const vc_frame_t *frame) {
     }
 
     // --- Throttled diagnostics ---------------------------------------------
-    // Verify the data crossing the C boundary. Logs once every 90 frames, plus
-    // a one-time texture description on the very first call.
+    // Verify the data crossing the C boundary: a one-time texture description on
+    // the very first call (always), then one block every 90 frames, gated behind
+    // VC_PERF_LOG like the other verbose perf lines.
     static uint64_t vcFrameCounter = 0;
     static double vcLastLoggedPresentationTime = 0.0;
     static bool vcHaveLoggedBefore = false;
@@ -322,7 +323,7 @@ void vc_renderer_render(const vc_frame_t *frame) {
               frame->rate_map == NULL ? "null" : "non-null");
     }
 
-    if ((currentFrame % 90) != 0) {
+    if (!vc_perf_log() || (currentFrame % 90) != 0) {
         return;
     }
 
@@ -396,10 +397,11 @@ void vc_set_stereo_eye_matrices(const vc_stereo_eye_matrices_t *eyes) {
     gStereoEyes = *eyes;
     os_unfair_lock_unlock(&gStereoEyesLock);
 
-    // Throttled (~1/s): per-eye translation + first projection row, so the eye
-    // separation can be checked -- expect ~0.06 m (real IPD), NOT 1.0 (the old
-    // synthetic +/-0.5 m offset the render path still uses until it consumes this).
-    if (!eyes->valid) return;
+    // Throttled (~1/s), gated behind VC_PERF_LOG: per-eye translation + first
+    // projection row, so the eye separation can be checked -- expect the real IPD
+    // (~0.06 m). The render path consumes these matrices (librw vc_stereo_eye_pass);
+    // the synthetic +/-0.5 m offset is only the VC_STEREO_REAL=0 fallback there.
+    if (!eyes->valid || !vc_perf_log()) return;
     static double lastLog = 0.0;
     double nowT = CFAbsoluteTimeGetCurrent();
     if (nowT - lastLog < 1.0) return;
@@ -419,7 +421,7 @@ void vc_set_stereo_eye_matrices(const vc_stereo_eye_matrices_t *eyes) {
           tR.x, tR.y, tR.z,
           eyes->projection[1].columns[0].x, eyes->projection[1].columns[1].x,
           eyes->projection[1].columns[2].x, eyes->projection[1].columns[3].x);
-    NSLog(@"[vc-eyes] eye separation = %.4f m (expect ~0.06, not 1.0)", sep);
+    NSLog(@"[vc-eyes] eye separation = %.4f m (expect the real IPD, ~0.06)", sep);
 }
 
 bool vc_get_stereo_eye_matrices(vc_stereo_eye_matrices_t *out) {
